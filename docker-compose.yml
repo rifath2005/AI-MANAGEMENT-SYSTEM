@@ -1,0 +1,13 @@
+services:
+  approval-ai:
+    build: .
+    ports:
+      - "5050:5050"
+    environment:
+      - PORT=5050
+      - AMS_DB_PATH=/app/data/approval_system.db
+      - AMS_UPLOAD_DIR=/app/data/uploads
+      - AMS_LOG_DIR=/app/logs
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs

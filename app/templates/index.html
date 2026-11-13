@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Approval Management System using AI</title>
+  <script>
+    (function () {
+      var saved = localStorage.getItem("ams_theme");
+      var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+      document.documentElement.setAttribute("data-theme", saved || (prefersDark ? "dark" : "light"));
+    })();
+  </script>
+  <link rel="stylesheet" href="/static/css/styles.css" />
+</head>
+<body>
+  <!-- Modern Wavy Split-Showcase Sign-In Gateway -->
+  <section id="login-view" class="login-wrapper" data-portal-role="{{ portal_role|default('staff') }}">
+    <!-- Animated Multi-Layer Wavy Background -->
+    <div class="login-wave-bg" aria-hidden="true">
+      <svg class="wave-svg wave-back" viewBox="0 0 1440 360" preserveAspectRatio="none">
+        <path d="M0,192 C240,288 480,96 720,176 C960,256 1200,112 1440,180 L1440,360 L0,360 Z"></path>
+      </svg>
+      <svg class="wave-svg wave-mid" viewBox="0 0 1440 360" preserveAspectRatio="none">
+        <path d="M0,224 C280,128 520,300 840,208 C1100,132 1280,250 1440,192 L1440,360 L0,360 Z"></path>
+      </svg>
+      <svg class="wave-svg wave-front" viewBox="0 0 1440 360" preserveAspectRatio="none">
+        <path d="M0,272 C320,330 620,190 940,260 C1180,312 1320,235 1440,256 L1440,360 L0,360 Z"></path>
+      </svg>
+    </div>
+
+    <!-- Top Floating Utility Header -->
+    <div class="login-topbar">
+      <div class="login-brand-chip">
+        <span class="logo-dot"></span>
+        <span>AMS • AI Governance</span>
+      </div>
+      <button type="button" id="login-theme-toggle" class="theme-toggle-btn" aria-label="Toggle dark or light theme">
+        <span class="theme-icon" aria-hidden="true">◐</span>
+        <span class="theme-label">Dark Mode</span>
+      </button>
+    </div>
+
+    <div class="wave-auth-shell {% if portal_role == 'admin' %}is-admin-shell{% endif %}">
+      <!-- Left Wavy Showcase Panel -->
+      <div class="wave-showcase-panel">
+        <div class="showcase-content">
+          {% if portal_role == 'admin' %}
+            <div class="brand-badge admin-badge">Restricted Security Gateway • /login/admin</div>
+            <h1>Administrator Sign In</h1>
+            <p class="subtitle">Isolated governance gateway for system administrators. Standard staff login cannot authenticate admin accounts.</p>
+          {% else %}
+            <div class="brand-badge">Approval Management System • Sign In</div>
+            <h1>Welcome Back</h1>
+            <p class="subtitle">Sign in with your corporate credentials to open your role workspace. Intelligent routing, anomaly scoring, and audit logs ready in one place.</p>
+          {% endif %}
+
+          <div class="showcase-metrics">
+            <div class="metric-chip">
+              <span class="metric-dot sage"></span>
+              <div>
+                <strong>AI Risk &amp; NLP Routing</strong>
+                <span>Local ML + custom LLM API ready</span>
+              </div>
+            </div>
+            <div class="metric-chip">
+              <span class="metric-dot tomato"></span>
+              <div>
+                <strong>Zero-Trust Security &amp; Audit</strong>
+                <span>Rate-limited &amp; tamper-evident logging</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Organic Vertical/Bottom Wavy Divider inside Card -->
+        <svg class="showcase-wave-edge" viewBox="0 0 120 600" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M48,0 C95,120 12,240 62,360 C104,460 28,535 58,600 L120,600 L120,0 Z"></path>
+        </svg>
+        <svg class="showcase-wave-bottom" viewBox="0 0 600 80" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M0,34 C140,78 280,2 440,42 C520,62 565,30 600,20 L600,80 L0,80 Z"></path>
+        </svg>
+      </div>
+
+      <!-- Right Auth Form Panel -->
+      <div class="wave-form-panel">
+        <div class="form-panel-head">
+          <h2>{% if portal_role == 'admin' %}Security Verification{% else %}Account Access{% endif %}</h2>
+          <p class="small muted">Enter your corporate credentials to continue.</p>
+        </div>
+
+        {% if portal_role in ('staff', 'requester') %}
+          <div class="auth-mode-switch" id="auth-mode-switch">
+            <button type="button" class="auth-mode-btn active" data-mode="signin">Sign In</button>
+            <button type="button" class="auth-mode-btn" data-mode="signup">Create Account</button>
+          </div>
+        {% endif %}
+
+        <!-- Sign-In Form (always empty by default — zero prefilled credentials) -->
+        <form id="login-form" autocomplete="on" novalidate>
+          <label for="login-email">Corporate Email <span class="req-star" title="Required">*</span>
+            <input type="email" id="login-email" name="email" autocomplete="email" placeholder="e.g. nadia.patel@company.com" required aria-required="true" aria-describedby="login-email-error" />
+          </label>
+          <span id="login-email-error" class="field-error hidden" role="alert"></span>
+          <span id="login-username-error" class="field-error hidden" role="alert"></span>
+
+          <label for="login-password">Password <span class="req-star" title="Required">*</span>
+            <div class="password-wrap">
+              <input type="password" id="login-password" name="password" autocomplete="current-password" placeholder="Enter valid email first" required aria-required="true" aria-describedby="login-password-error" disabled />
+              <button type="button" class="toggle-pass-btn" id="toggle-login-pass" disabled aria-label="Toggle password visibility">Show</button>
+            </div>
+          </label>
+          <span id="login-password-error" class="field-error hidden" role="alert"></span>
+          <p id="login-password-hint" class="field-hint muted">Password unlocks after entering a valid corporate email.</p>
+
+          <button type="submit" id="login-submit-btn" class="btn btn-special full-width" disabled>
+            {% if portal_role == 'admin' %}Authenticate Admin Gateway{% else %}Sign In{% endif %}
+          </button>
+          <p id="login-error" class="error-text hidden" role="alert"></p>
+        </form>
+
+        {% if portal_role in ('staff', 'requester') %}
+          {# Self-Service Sign-Up Form (Requester Role Only; excluded from restricted admin gateway) #}
+          <form id="signup-form" class="hidden" autocomplete="on" novalidate>
+            <label for="signup-fullname">Full Name <span class="req-star" title="Required">*</span>
+              <input type="text" id="signup-fullname" placeholder="e.g. Priya Sharma" required aria-required="true" aria-describedby="signup-fullname-error" />
+            </label>
+            <span id="signup-fullname-error" class="field-error hidden" role="alert"></span>
+
+            <div class="form-row">
+              <div class="field-group">
+                <label for="signup-username">Username <span class="req-star" title="Required">*</span>
+                  <input type="text" id="signup-username" placeholder="e.g. priya.sharma" required aria-required="true" aria-describedby="signup-username-error" />
+                </label>
+                <span id="signup-username-error" class="field-error hidden" role="alert"></span>
+              </div>
+              <div class="field-group">
+                <label for="signup-dept">Department <span class="req-star" title="Required">*</span>
+                  <input type="text" id="signup-dept" placeholder="Enter your department" required aria-required="true" aria-describedby="signup-dept-error" />
+                </label>
+                <span id="signup-dept-error" class="field-error hidden" role="alert"></span>
+              </div>
+            </div>
+
+            <label for="signup-email">Corporate Email <span class="req-star" title="Required">*</span>
+              <input type="email" id="signup-email" placeholder="priya.sharma@company.com" required aria-required="true" aria-describedby="signup-email-error" />
+            </label>
+            <span id="signup-email-error" class="field-error hidden" role="alert"></span>
+
+            <label for="signup-password">Password <span class="req-star" title="Required">*</span>
+              <div class="password-wrap">
+                <input type="password" id="signup-password" autocomplete="new-password" placeholder="Enter valid email first" required aria-required="true" aria-describedby="signup-password-error" disabled />
+                <button type="button" class="toggle-pass-btn" id="toggle-signup-pass" disabled aria-label="Toggle password visibility">Show</button>
+              </div>
+            </label>
+            <span id="signup-password-error" class="field-error hidden" role="alert"></span>
+            <p id="signup-password-hint" class="field-hint muted">Password unlocks after entering a valid corporate email.</p>
+
+            <!-- Password Strength Feedback (Live Indicator + Plain-Language Checklist) -->
+            <div id="signup-password-strength-box" class="password-strength-box hidden" aria-live="polite">
+              <div class="strength-meter-header">
+                <span class="strength-caption">Password Strength:</span>
+                <span id="signup-strength-label" class="strength-badge strength-none">None</span>
+              </div>
+              <div class="strength-meter-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="signup-strength-progress">
+                <div id="signup-strength-bar" class="strength-meter-bar strength-bar-none"></div>
+              </div>
+              <ul class="password-checklist" id="signup-password-checklist" aria-label="Password rules">
+                <li id="rule-length" class="checklist-item is-unmet">
+                  <span class="check-icon" aria-hidden="true">○</span>
+                  <span>At least 8 characters in length</span>
+                </li>
+                <li id="rule-upper" class="checklist-item is-unmet">
+                  <span class="check-icon" aria-hidden="true">○</span>
+                  <span>At least one uppercase letter (A–Z)</span>
+                </li>
+                <li id="rule-lower" class="checklist-item is-unmet">
+                  <span class="check-icon" aria-hidden="true">○</span>
+                  <span>At least one lowercase letter (a–z)</span>
+                </li>
+                <li id="rule-digit" class="checklist-item is-unmet">
+                  <span class="check-icon" aria-hidden="true">○</span>
+                  <span>At least one numeric digit (0–9)</span>
+                </li>
+                <li id="rule-special" class="checklist-item is-unmet">
+                  <span class="check-icon" aria-hidden="true">○</span>
+                  <span>At least one special character (!@#$%^&amp;*)</span>
+                </li>
+              </ul>
+            </div>
+
+            <button type="submit" id="signup-submit-btn" class="btn btn-special full-width" disabled>Create Requester Account</button>
+            <p id="signup-error" class="error-text hidden" role="alert"></p>
+          </form>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  <!-- Main Application Shell -->
+  <div id="app-shell" class="hidden">
+    <header class="topbar">
+      <div class="topbar-left">
+        <span class="logo-dot"></span>
+        <div>
+          <strong>Approval Management System</strong>
+          <span class="small" id="portal-subtitle">Role Workspace</span>
+        </div>
+      </div>
+      <nav class="nav-tabs" id="nav-tabs">
+        <button class="nav-btn active" data-tab="dashboard" id="nav-dashboard-btn">Role Dashboard</button>
+        <button class="nav-btn" data-tab="requests">Requests &amp; Queue</button>
+        <button class="nav-btn" data-tab="submit">Submit / Voice &amp; Chat</button>
+        <button class="nav-btn admin-only hidden" data-tab="admin">Admin, Supabase &amp; Audit</button>
+      </nav>
+      <div class="topbar-right">
+        <button type="button" id="app-theme-toggle" class="theme-toggle-btn theme-toggle-sm" aria-label="Toggle dark or light theme">
+          <span class="theme-icon" aria-hidden="true">◐</span>
+          <span class="theme-label">Dark Mode</span>
+        </button>
+        <button id="notif-toggle-btn" class="btn btn-secondary btn-sm">
+          Alerts <span id="notif-badge" class="badge">0</span>
+        </button>
+        <div class="user-pill">
+          <span id="user-display-name">User</span>
+          <span id="user-role-badge" class="role-tag">role</span>
+        </div>
+        <button id="logout-btn" class="btn btn-special btn-sm">Sign Out</button>
+      </div>
+    </header>
+
+    <!-- Notification Drawer -->
+    <aside id="notif-drawer" class="notif-drawer hidden">
+      <div class="drawer-header">
+        <h3>Notifications &amp; Alerts</h3>
+        <div class="drawer-actions">
+          <button id="sweep-reminders-btn" class="btn btn-sm btn-primary approver-only hidden">Check Deadlines</button>
+          <button id="close-notif-btn" class="btn btn-sm btn-secondary">Close</button>
+        </div>
+      </div>
+      <div id="notif-list" class="notif-list"></div>
+    </aside>
+
+    <main class="container">
+      <!-- Tab 1: Dedicated Role-Specific Dashboard -->
+      <section id="tab-dashboard" class="tab-panel active">
+        <div id="role-banner" class="role-banner"></div>
+        <div id="kpi-grid" class="kpi-grid"></div>
+
+        <!-- Role-Specific Workspace Body -->
+        <div id="role-dashboard-body"></div>
+
+        <div class="two-col">
+          <div class="card">
+            <h3>Requests by Type</h3>
+            <div id="type-breakdown"></div>
+          </div>
+          <div class="card">
+            <h3>Predictive Analytics: Bottlenecks &amp; Forecast</h3>
+            <div id="predictions-panel"><p class="muted">Loading predictions...</p></div>
+          </div>
+        </div>
+
+        <div class="card approver-only hidden">
+          <h3>AI Workflow Optimization &amp; Dynamic Rule Proposals</h3>
+          <div id="optimizations-panel"></div>
+        </div>
+      </section>
+
+      <!-- Tab 2: Requests & Queue -->
+      <section id="tab-requests" class="tab-panel hidden">
+        <div class="panel-header">
+          <h2>Requests &amp; Approval Queue</h2>
+          <div class="filter-bar">
+            <select id="filter-scope">
+              <option value="">All Accessible</option>
+              <option value="mine">My Submitted</option>
+              <option value="queue">Pending My Approval</option>
+            </select>
+            <select id="filter-status">
+              <option value="">All Statuses</option>
+              <option value="in_review">In Review</option>
+              <option value="flagged">Flagged Anomaly</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+            </select>
+            <button id="refresh-requests-btn" class="btn btn-primary btn-sm">Refresh</button>
+          </div>
+        </div>
+        <div class="card table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Title &amp; Type</th>
+                <th>Requester</th>
+                <th>Amount</th>
+                <th>Status</th>
+                <th>AI Risk &amp; Rec</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="requests-tbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Tab 3: Submit / Voice & Chat NLP -->
+      <section id="tab-submit" class="tab-panel hidden">
+        <div class="two-col">
+          <div class="card">
+            <h2>Submit New Request</h2>
+            <form id="request-form">
+              <label>Request Type
+                <select id="req-type">
+                  <option value="expense_report">Expense Report</option>
+                  <option value="leave_request">Leave Request</option>
+                  <option value="purchase_order">Purchase Order</option>
+                </select>
+              </label>
+              <label>Title
+                <input type="text" id="req-title" placeholder="e.g. Conference Flight & Hotel" required />
+              </label>
+              <div class="form-row">
+                <label>Amount / Days
+                  <input type="number" step="0.01" id="req-amount" placeholder="0.00" required />
+                </label>
+                <label>Urgency
+                  <select id="req-urgency">
+                    <option value="normal">Normal</option>
+                    <option value="high">High</option>
+                    <option value="low">Low</option>
+                  </select>
+                </label>
+              </div>
+              <label>Description
+                <textarea id="req-description" rows="4" placeholder="Describe the request for AI compliance & NLP analysis..." required></textarea>
+              </label>
+              <label>Supporting Documentation (Local Disk or Supabase Storage)
+                <input type="file" id="req-attachment" />
+              </label>
+              <div class="form-actions">
+                <button type="button" id="nlp-preview-btn" class="btn btn-secondary">Analyze with NLP</button>
+                <button type="submit" class="btn btn-special">Submit Request</button>
+              </div>
+              <div id="nlp-preview-box" class="info-box hidden"></div>
+              <div id="submit-result-box" class="info-box hidden"></div>
+            </form>
+          </div>
+
+          <div class="card">
+            <div class="panel-header" style="margin-bottom:6px;">
+              <h2 style="margin:0;">Voice &amp; Chat NLP Assistant</h2>
+              <span id="chat-engine-badge" class="role-tag">local_nlp</span>
+            </div>
+            <p class="muted small">Works free offline via local NLP, or plug in your own API key (Gemini, OpenAI, Groq, or custom fine-tuned model).</p>
+            <details class="info-box" style="margin-bottom:10px;margin-top:0;">
+              <summary style="cursor:pointer;font-weight:700;">Configure Chat API Key / Project Fine-Tune</summary>
+              <form id="chat-key-form" style="margin-top:8px;">
+                <div class="form-row">
+                  <select id="llm-provider">
+                    <option value="auto">Auto-Detect Provider</option>
+                    <option value="gemini">Google Gemini</option>
+                    <option value="openai">OpenAI / Fine-Tuned</option>
+                    <option value="groq">Groq</option>
+                    <option value="openai_compatible">Custom OpenAI-Compatible</option>
+                  </select>
+                  <input type="text" id="llm-model" placeholder="Model (optional, e.g. gpt-4o-mini)" />
+                </div>
+                <input type="password" id="llm-api-key" placeholder="Paste API key (leave blank for free local NLP)" />
+                <input type="text" id="llm-base-url" placeholder="Custom Base URL" class="hidden" />
+                <div class="form-actions">
+                  <button type="submit" class="btn btn-special btn-sm">Apply Key</button>
+                  <button type="button" id="llm-clear-btn" class="btn btn-secondary btn-sm">Use Free Local NLP</button>
+                  <a href="#" id="download-finetune-btn" class="btn btn-primary btn-sm">Download Fine-Tune JSONL</a>
+                </div>
+                <div id="llm-config-status" class="small muted" style="margin-top:6px;"></div>
+              </form>
+            </details>
+            <div id="chat-log" class="chat-log"></div>
+            <form id="chat-form" class="chat-form">
+              <input type="text" id="chat-input" placeholder="e.g. Submit expense report for $140 for team lunch" required />
+              <button type="button" id="voice-btn" class="btn btn-secondary" title="Browser Voice Input">Mic</button>
+              <button type="submit" class="btn btn-special">Send</button>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tab 4: Admin (Workflows, Policies, Supabase Storage, Users, Audit) -->
+      <section id="tab-admin" class="tab-panel hidden">
+        <div class="two-col">
+          <div class="card">
+            <h3>Supabase Storage Configuration (Free Tier)</h3>
+            <p class="muted small">Connect a free Supabase Storage bucket for supporting attachments, or leave blank to use zero-cost local disk storage.</p>
+            <form id="storage-form">
+              <label>Supabase Project URL
+                <input type="url" id="sb-url" placeholder="https://xyzcompany.supabase.co" />
+              </label>
+              <label>Supabase API Key (Service / Anon)
+                <input type="password" id="sb-key" placeholder="eyJ..." />
+              </label>
+              <label>Storage Bucket Name
+                <input type="text" id="sb-bucket" placeholder="e.g. approval-attachments" />
+              </label>
+              <div class="form-actions">
+                <button type="submit" class="btn btn-special btn-sm">Save Storage Config</button>
+                <button type="button" id="retrain-ai-btn" class="btn btn-primary btn-sm">Retrain AI Model Now</button>
+              </div>
+              <div id="storage-status-box" class="small muted" style="margin-top:6px;"></div>
+            </form>
+          </div>
+
+          <div class="card">
+            <h3>Policies &amp; Auto-Approval Thresholds</h3>
+            <div id="policies-list"></div>
+          </div>
+        </div>
+
+        <div class="two-col">
+          <div class="card">
+            <h3>Approval Workflows</h3>
+            <div id="workflows-list"></div>
+            <hr />
+            <h4>Create Workflow</h4>
+            <form id="workflow-form">
+              <input type="text" id="wf-name" placeholder="Workflow Name" required />
+              <div class="form-row">
+                <select id="wf-type">
+                  <option value="expense_report">expense_report</option>
+                  <option value="leave_request">leave_request</option>
+                  <option value="purchase_order">purchase_order</option>
+                </select>
+                <select id="wf-mode">
+                  <option value="sequential">sequential</option>
+                  <option value="parallel">parallel</option>
+                </select>
+              </div>
+              <input type="text" id="wf-stages" placeholder='[{"name":"Stage Name","role":"manager","sla_hours":24}]' />
+              <button type="submit" class="btn btn-special btn-sm" style="margin-top:8px;">Add Workflow</button>
+            </form>
+          </div>
+
+          <div class="card">
+            <h3>User Profiles &amp; RBAC</h3>
+            <div id="users-list"></div>
+            <hr />
+            <h4>Add User</h4>
+            <form id="user-form">
+              <div class="form-row">
+                <input type="text" id="u-username" placeholder="Username" required />
+                <input type="password" id="u-password" placeholder="Password" required />
+              </div>
+              <div class="form-row">
+                <input type="text" id="u-fullname" placeholder="Full Name" required />
+                <input type="email" id="u-email" placeholder="Email" required />
+              </div>
+              <div class="form-row">
+                <select id="u-role">
+                  <option value="requester">requester</option>
+                  <option value="manager">manager</option>
+                  <option value="approver">approver</option>
+                  <option value="hr">hr</option>
+                  <option value="admin">admin</option>
+                </select>
+                <input type="text" id="u-dept" placeholder="Department" />
+              </div>
+              <button type="submit" class="btn btn-special btn-sm" style="margin-top:8px;">Create User</button>
+            </form>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="panel-header">
+            <h3>Tamper-Evident Audit Trail</h3>
+            <button id="verify-audit-btn" class="btn btn-special btn-sm">Verify Hash Chain</button>
+          </div>
+          <div id="audit-verify-status" class="small muted"></div>
+          <div id="audit-list" class="audit-list"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Request Detail & Approval Modal -->
+  <div id="detail-modal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="modal-title">Request Details</h3>
+        <button id="modal-close-btn" class="btn btn-secondary btn-sm">Close</button>
+      </div>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,63 @@
+# ==============================================================================
+# Approval Management System (AMS) — Git Ignore Configuration
+# Protects all secret keys, database files, uploaded documents, and caches
+# ==============================================================================
+
+# Secrets & Environment Variables (CRITICAL - NEVER COMMIT TO GIT)
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.cert
+
+# Python Virtual Environments & Packages
+.venv/
+venv/
+ENV/
+env/
+site-packages/
+
+# Python Bytecode & Caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Database Files (Keeps active database local and secure)
+data/*.db
+data/*.db-wal
+data/*.db-shm
+*.sqlite
+*.sqlite3
+
+# Uploaded Files & Attachments (Preserves privacy of user documents)
+data/uploads/*
+!data/uploads/.gitkeep
+
+# Application Logs
+logs/*
+!logs/.gitkeep
+*.log
+
+# IDE, OS & Editor Metadata
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
