@@ -59,8 +59,8 @@
             <div class="metric-chip">
               <span class="metric-dot sage"></span>
               <div>
-                <strong>AI Risk &amp; NLP Routing</strong>
-                <span>Local ML + custom LLM API ready</span>
+                <strong>AI Risk &amp; Routing</strong>
+                <span>Automated risk scoring &amp; policy evaluation</span>
               </div>
             </div>
             <div class="metric-chip">
@@ -211,7 +211,7 @@
         <button class="nav-btn active" data-tab="dashboard" id="nav-dashboard-btn">Role Dashboard</button>
         <button class="nav-btn" data-tab="requests">Requests &amp; Queue</button>
         <button class="nav-btn" data-tab="submit">Submit / Voice &amp; Chat</button>
-        <button class="nav-btn admin-only hidden" data-tab="admin">Admin, Supabase &amp; Audit</button>
+        <button class="nav-btn admin-only hidden" data-tab="admin">Administration &amp; Audit</button>
       </nav>
       <div class="topbar-right">
         <button type="button" id="app-theme-toggle" class="theme-toggle-btn theme-toggle-sm" aria-label="Toggle dark or light theme">
@@ -334,13 +334,13 @@
                 </label>
               </div>
               <label>Description
-                <textarea id="req-description" rows="4" placeholder="Describe the request for AI compliance & NLP analysis..." required></textarea>
+                <textarea id="req-description" rows="4" placeholder="Describe the business purpose and details of your request..." required></textarea>
               </label>
-              <label>Supporting Documentation (Local Disk or Supabase Storage)
+              <label>Supporting Documentation (Receipts, Invoices, Proofs)
                 <input type="file" id="req-attachment" />
               </label>
               <div class="form-actions">
-                <button type="button" id="nlp-preview-btn" class="btn btn-secondary">Analyze with NLP</button>
+                <button type="button" id="nlp-preview-btn" class="btn btn-secondary">Policy Compliance Check</button>
                 <button type="submit" class="btn btn-special">Submit Request</button>
               </div>
               <div id="nlp-preview-box" class="info-box hidden"></div>
@@ -350,62 +350,49 @@
 
           <div class="card">
             <div class="panel-header" style="margin-bottom:6px;">
-              <h2 style="margin:0;">Voice &amp; Chat NLP Assistant</h2>
-              <span id="chat-engine-badge" class="role-tag">local_nlp</span>
+              <h2 style="margin:0;">Voice &amp; Chat Assistant</h2>
             </div>
-            <p class="muted small">Works free offline via local NLP, or plug in your own API key (Gemini, OpenAI, Groq, or custom fine-tuned model).</p>
-            <details class="info-box" style="margin-bottom:10px;margin-top:0;">
-              <summary style="cursor:pointer;font-weight:700;">Configure Chat API Key / Project Fine-Tune</summary>
-              <form id="chat-key-form" style="margin-top:8px;">
-                <div class="form-row">
-                  <select id="llm-provider">
-                    <option value="auto">Auto-Detect Provider</option>
-                    <option value="gemini">Google Gemini</option>
-                    <option value="openai">OpenAI / Fine-Tuned</option>
-                    <option value="groq">Groq</option>
-                    <option value="openai_compatible">Custom OpenAI-Compatible</option>
-                  </select>
-                  <input type="text" id="llm-model" placeholder="Model (optional, e.g. gpt-4o-mini)" />
-                </div>
-                <input type="password" id="llm-api-key" placeholder="Paste API key (leave blank for free local NLP)" />
-                <input type="text" id="llm-base-url" placeholder="Custom Base URL" class="hidden" />
-                <div class="form-actions">
-                  <button type="submit" class="btn btn-special btn-sm">Apply Key</button>
-                  <button type="button" id="llm-clear-btn" class="btn btn-secondary btn-sm">Use Free Local NLP</button>
-                  <a href="#" id="download-finetune-btn" class="btn btn-primary btn-sm">Download Fine-Tune JSONL</a>
-                </div>
-                <div id="llm-config-status" class="small muted" style="margin-top:6px;"></div>
-              </form>
-            </details>
+            <p class="muted small">Submit approval requests or query request status using natural language or voice commands.</p>
             <div id="chat-log" class="chat-log"></div>
+            <!-- Live Voice Recognition Status Bar -->
+            <div id="voice-status-bar" class="voice-status-bar hidden">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span class="voice-pulse-dot"></span>
+                <span id="voice-status-text">Listening... Speak your request clearly.</span>
+              </div>
+              <button type="button" id="voice-cancel-btn" class="btn btn-sm btn-secondary" style="padding:2px 8px;font-size:0.75rem;">Dismiss</button>
+            </div>
             <form id="chat-form" class="chat-form">
               <input type="text" id="chat-input" placeholder="e.g. Submit expense report for $140 for team lunch" required />
-              <button type="button" id="voice-btn" class="btn btn-secondary" title="Browser Voice Input">Mic</button>
+              <button type="button" id="voice-btn" class="btn btn-secondary btn-voice" title="Click to speak with voice assistant">
+                <span class="voice-icon">🎙️</span>
+                <span class="voice-label">Mic</span>
+              </button>
               <button type="submit" class="btn btn-special">Send</button>
             </form>
           </div>
         </div>
       </section>
 
-      <!-- Tab 4: Admin (Workflows, Policies, Supabase Storage, Users, Audit) -->
+      <!-- Tab 4: Admin (Workflows, Policies, Storage, Users, Audit) -->
       <section id="tab-admin" class="tab-panel hidden">
         <div class="two-col">
           <div class="card">
-            <h3>Supabase Storage Configuration (Free Tier)</h3>
-            <p class="muted small">Connect a free Supabase Storage bucket for supporting attachments, or leave blank to use zero-cost local disk storage.</p>
+            <h3>Document Storage Service</h3>
+            <p class="muted small">Enterprise cloud storage integration for supporting receipts and attachment uploads.</p>
             <form id="storage-form">
-              <label>Supabase Project URL
+              <label>Cloud Storage Endpoint URL
                 <input type="url" id="sb-url" placeholder="https://xyzcompany.supabase.co" />
               </label>
-              <label>Supabase API Key (Service / Anon)
-                <input type="password" id="sb-key" placeholder="eyJ..." />
+              <label>Storage Access Key
+                <input type="password" id="sb-key" placeholder="••••••••••••••••" />
               </label>
               <label>Storage Bucket Name
                 <input type="text" id="sb-bucket" placeholder="e.g. approval-attachments" />
               </label>
               <div class="form-actions">
-                <button type="submit" class="btn btn-special btn-sm">Save Storage Config</button>
-                <button type="button" id="retrain-ai-btn" class="btn btn-primary btn-sm">Retrain AI Model Now</button>
+                <button type="submit" class="btn btn-special btn-sm">Update Storage Config</button>
+                <button type="button" id="retrain-ai-btn" class="btn btn-primary btn-sm">Retrain AI Models</button>
               </div>
               <div id="storage-status-box" class="small muted" style="margin-top:6px;"></div>
             </form>

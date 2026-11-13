@@ -640,8 +640,8 @@ const ROLE_PORTAL_META = {
     tabLabel: "HR Desk",
   },
   admin: {
-    title: "System Admin Console — Governance, Storage & AI",
-    subtitle: "Configure workflows, policies, Supabase storage, LLM keys, and audit integrity.",
+    title: "System Admin Console — Governance, Workflows & AI",
+    subtitle: "System governance, workflow definitions, policy thresholds, and audit integrity.",
     tabLabel: "Admin Console",
   },
 };
@@ -1224,7 +1224,7 @@ document.getElementById("request-form").addEventListener("submit", async (e) => 
   loadNotifications();
 });
 
-// Voice & Chat Assistant + BYOK Project-Tuned LLM Config
+// Voice & Chat Assistant
 function getSessionLlmHeaders() {
   const key = sessionStorage.getItem("ams_llm_key") || "";
   if (!key) return {};
@@ -1237,75 +1237,8 @@ function getSessionLlmHeaders() {
 }
 
 async function loadChatConfig() {
-  try {
-    const cfg = await api("/api/chat/config", { headers: getSessionLlmHeaders() });
-    document.getElementById("chat-engine-badge").textContent = cfg.configured
-      ? `${cfg.provider}:${cfg.model}`
-      : "local_nlp";
-    document.getElementById("llm-config-status").textContent = cfg.configured
-      ? `Active: ${cfg.provider} (${cfg.model}) • Key ${cfg.masked_key}`
-      : "Active: Free Local NLP Parser (no external API key required)";
-  } catch {
-    // ignore before login
-  }
+  // Handled transparently by backend environment
 }
-
-document.getElementById("llm-provider").addEventListener("change", (e) => {
-  showEl(document.getElementById("llm-base-url"), e.target.value === "openai_compatible");
-});
-
-document.getElementById("chat-key-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const apiKey = document.getElementById("llm-api-key").value.trim();
-  const provider = document.getElementById("llm-provider").value;
-  const model = document.getElementById("llm-model").value.trim();
-  const baseUrl = document.getElementById("llm-base-url").value.trim();
-
-  if (state.user && state.user.role === "admin") {
-    await api("/api/chat/config", {
-      method: "POST",
-      body: JSON.stringify({ api_key: apiKey, provider, model, base_url: baseUrl }),
-    });
-    sessionStorage.removeItem("ams_llm_key");
-  } else if (apiKey) {
-    sessionStorage.setItem("ams_llm_key", apiKey);
-    sessionStorage.setItem("ams_llm_provider", provider);
-    sessionStorage.setItem("ams_llm_model", model);
-    sessionStorage.setItem("ams_llm_base_url", baseUrl);
-  }
-  document.getElementById("llm-api-key").value = "";
-  loadChatConfig();
-});
-
-document.getElementById("llm-clear-btn").addEventListener("click", async () => {
-  sessionStorage.removeItem("ams_llm_key");
-  sessionStorage.removeItem("ams_llm_provider");
-  sessionStorage.removeItem("ams_llm_model");
-  sessionStorage.removeItem("ams_llm_base_url");
-  if (state.user && state.user.role === "admin") {
-    await api("/api/chat/config", {
-      method: "POST",
-      body: JSON.stringify({ api_key: "", provider: "auto", model: "", base_url: "" }),
-    });
-  }
-  loadChatConfig();
-});
-
-document.getElementById("download-finetune-btn").addEventListener("click", async (e) => {
-  e.preventDefault();
-  const prov = document.getElementById("llm-provider").value;
-  const fmt = prov === "gemini" ? "gemini" : "openai";
-  const res = await fetch(`/api/chat/finetune-dataset?format=${fmt}`, {
-    headers: { Authorization: `Bearer ${state.token}` },
-  });
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `ams_chat_finetune_${fmt}.jsonl`;
-  a.click();
-  URL.revokeObjectURL(url);
-});
 
 function appendChat(text, cls) {
   const log = document.getElementById("chat-log");
@@ -1329,8 +1262,9 @@ document.getElementById("chat-form").addEventListener("submit", async (e) => {
       headers: getSessionLlmHeaders(),
       body: JSON.stringify({ message: msg }),
     });
-    if (res.engine) {
-      document.getElementById("chat-engine-badge").textContent = res.engine;
+    const badge = document.getElementById("chat-engine-badge");
+    if (badge && res.engine) {
+      badge.textContent = res.engine;
     }
     appendChat(res.reply, "chat-bot");
     loadRequests();
@@ -1340,20 +1274,146 @@ document.getElementById("chat-form").addEventListener("submit", async (e) => {
   }
 });
 
-document.getElementById("voice-btn").addEventListener("click", () => {
+// Production-Grade Web Voice Recognition Engine
+let recognition = null;
+let isVoiceRecording = false;
+
+function initVoiceRecognition() {
+  const voiceBtn = document.getElementById("voice-btn");
+  const statusBar = document.getElementById("voice-status-bar");
+  const statusText = document.getElementById("voice-status-text");
+  const cancelBtn = document.getElementById("voice-cancel-btn");
+  const chatInput = document.getElementById("chat-input");
+
+  if (!voiceBtn) return;
+
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  function updateVoiceUI(recording, message, isListening = true) {
+    isVoiceRecording = recording;
+    if (recording) {
+      voiceBtn.classList.add("is-recording");
+      voiceBtn.innerHTML = `<span>🔴</span> <span>Stop</span>`;
+      voiceBtn.title = "Click to finish voice recording";
+      if (statusBar) {
+        statusBar.classList.remove("hidden");
+        statusBar.classList.toggle("is-listening", isListening);
+        if (statusText) statusText.textContent = message || "Listening... Speak your request clearly.";
+      }
+    } else {
+      voiceBtn.classList.remove("is-recording");
+      voiceBtn.innerHTML = `<span>🎙️</span> <span>Mic</span>`;
+      voiceBtn.title = "Click to speak with voice assistant";
+      if (statusBar) {
+        if (message) {
+          statusBar.classList.remove("hidden");
+          statusBar.classList.toggle("is-listening", isListening);
+          if (statusText) statusText.textContent = message;
+          setTimeout(() => {
+            if (!isVoiceRecording && statusBar) statusBar.classList.add("hidden");
+          }, 3500);
+        } else {
+          statusBar.classList.add("hidden");
+        }
+      }
+    }
+  }
+
   if (!SpeechRec) {
-    appendChat("Voice recognition is not supported in this browser; please type your command.", "chat-bot");
+    voiceBtn.addEventListener("click", () => {
+      updateVoiceUI(false, "Speech recognition is supported in Google Chrome, Microsoft Edge, and Safari. Please type your request.", false);
+    });
     return;
   }
-  const rec = new SpeechRec();
-  rec.lang = "en-US";
-  rec.onresult = (event) => {
-    const transcript = event.results[0][0].transcript;
-    document.getElementById("chat-input").value = transcript;
-  };
-  rec.start();
-});
+
+  try {
+    recognition = new SpeechRec();
+    recognition.lang = "en-US";
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+      updateVoiceUI(true, "Listening... Speak now (e.g. 'Submit expense for team lunch $40')");
+      chatInput.placeholder = "Listening to your voice...";
+    };
+
+    recognition.onresult = (event) => {
+      let interim = "";
+      let final = "";
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          final += event.results[i][0].transcript;
+        } else {
+          interim += event.results[i][0].transcript;
+        }
+      }
+      const current = final || interim;
+      if (current) {
+        chatInput.value = current;
+      }
+      if (final) {
+        updateVoiceUI(false, "Voice captured successfully! Click Send or press Enter to submit.", true);
+        chatInput.placeholder = "e.g. Submit expense report for $140 for team lunch";
+        chatInput.focus();
+      }
+    };
+
+    recognition.onerror = (event) => {
+      let msg = "Voice capture failed: " + event.error;
+      if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+        msg = "Microphone access blocked. Click the microphone icon in your browser URL bar to allow access.";
+      } else if (event.error === "no-speech") {
+        msg = "No voice detected. Please click the mic and speak clearly.";
+      } else if (event.error === "network") {
+        msg = "Speech recognition network service error. Please check your internet connection.";
+      } else if (event.error === "audio-capture") {
+        msg = "No microphone hardware detected on this device.";
+      }
+      updateVoiceUI(false, msg, false);
+      chatInput.placeholder = "e.g. Submit expense report for $140 for team lunch";
+    };
+
+    recognition.onend = () => {
+      if (isVoiceRecording) {
+        updateVoiceUI(false);
+        chatInput.placeholder = "e.g. Submit expense report for $140 for team lunch";
+      }
+    };
+
+    voiceBtn.addEventListener("click", () => {
+      if (isVoiceRecording) {
+        try { recognition.stop(); } catch (e) {}
+        updateVoiceUI(false);
+      } else {
+        chatInput.value = "";
+        try {
+          recognition.start();
+        } catch (err) {
+          try {
+            recognition.stop();
+            setTimeout(() => recognition.start(), 200);
+          } catch (e) {
+            updateVoiceUI(false, "Microphone start error: " + err.message, false);
+          }
+        }
+      }
+    });
+
+    if (cancelBtn) {
+      cancelBtn.addEventListener("click", () => {
+        if (isVoiceRecording) {
+          try { recognition.abort(); } catch (e) {}
+        }
+        updateVoiceUI(false);
+      });
+    }
+  } catch (err) {
+    console.warn("Failed to instantiate SpeechRecognition:", err);
+  }
+}
+
+initVoiceRecognition();
 
 // Admin Tools + Supabase Storage
 async function loadAdminData() {
@@ -1368,8 +1428,8 @@ async function loadAdminData() {
   document.getElementById("sb-url").value = stoRes.supabase_url || "";
   document.getElementById("sb-bucket").value = stoRes.bucket || "approval-attachments";
   document.getElementById("storage-status-box").textContent = stoRes.supabase_configured
-    ? `Active Storage: Supabase (${stoRes.bucket}, Key ${stoRes.masked_key})`
-    : "Active Storage: Local Disk (free fallback; enter Supabase URL & key above to switch)";
+    ? `Active Storage: Cloud Storage Connected (${stoRes.bucket})`
+    : "Active Storage: Standard Secure Storage";
 
   document.getElementById("workflows-list").innerHTML = wfRes.workflows.length
     ? wfRes.workflows
@@ -1423,8 +1483,8 @@ document.getElementById("storage-form").addEventListener("submit", async (e) => 
   });
   document.getElementById("sb-key").value = "";
   document.getElementById("storage-status-box").textContent = res.supabase_configured
-    ? `Active Storage: Supabase (${res.bucket}, Key ${res.masked_key})`
-    : "Active Storage: Local Disk";
+    ? `Active Storage: Cloud Storage Connected (${res.bucket})`
+    : "Active Storage: Standard Secure Storage";
 });
 
 document.getElementById("retrain-ai-btn").addEventListener("click", async () => {
