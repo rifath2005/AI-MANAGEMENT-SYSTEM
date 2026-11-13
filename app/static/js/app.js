@@ -943,54 +943,226 @@ async function loadRequests() {
     : '<tr><td colspan="7" class="muted small" style="text-align:center;padding:26px;">No requests found matching current filter.</td></tr>';
 }
 
+function escapeHtml(str) {
+  if (str === null || str === undefined) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function humanizeType(type) {
+  if (!type) return "General Request";
+  const map = {
+    expense_report: "Expense Report",
+    hardware_request: "Hardware Request",
+    software_license: "Software License",
+    travel_booking: "Travel Booking",
+    leave_request: "Leave Request",
+    vendor_payment: "Vendor Payment",
+    access_grant: "Access Grant",
+    general: "General Request",
+  };
+  return map[type] || type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function formatDate(isoStr) {
+  if (!isoStr) return "-";
+  try {
+    const d = new Date(isoStr);
+    return isNaN(d.getTime())
+      ? isoStr
+      : d.toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+  } catch (e) {
+    return isoStr;
+  }
+}
+
 window.openRequestDetail = async (id) => {
   const data = await api(`/api/requests/${id}`);
   const r = data.request;
-  document.getElementById("modal-title").textContent = `Request #${r.id}: ${r.title}`;
+
+  const humanType = humanizeType(r.request_type);
+  const urgencyLabel = (r.urgency || "normal").toUpperCase();
+  const urgencyClass = (r.urgency === "critical" || r.urgency === "high") ? "badge-urgent" : "badge-normal";
+
+  // Header Title & Status Badges
+  const titleContainer = document.getElementById("modal-title");
+  if (titleContainer) {
+    titleContainer.innerHTML = `
+      <div class="modal-header-info">
+        <div class="modal-header-badges">
+          <span class="status-pill status-${r.status}">${r.status}</span>
+          ${r.auto_approved ? '<span class="status-pill status-approved" style="background:rgba(15,118,110,0.12);color:#0D9488;border-color:rgba(15,118,110,0.3);">⚡ Auto-Approved</span>' : ""}
+          ${r.is_anomaly ? '<span class="status-pill status-rejected" style="background:rgba(239,68,68,0.12);color:#DC2626;border-color:rgba(239,68,68,0.3);">⚠️ Anomaly</span>' : ""}
+          <span class="detail-badge-type">${humanType}</span>
+        </div>
+        <h3 class="modal-title-text">Request #${r.id}: ${escapeHtml(r.title)}</h3>
+      </div>
+    `;
+  }
 
   const canDecide =
     ["manager", "approver", "hr", "admin"].includes(state.user.role) &&
     !["approved", "rejected"].includes(r.status) &&
     data.tasks.some((t) => t.status === "pending" && (t.assigned_role === state.user.role || state.user.role === "admin"));
 
+  const formattedAmount = `${Number(r.amount).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })} ${r.currency}`;
+
+  const riskPct = Math.round((r.ai_risk_score || 0) * 100);
+  const confPct = Math.round((r.ai_confidence || 0) * 100);
+  const rec = (r.ai_recommendation || "review").toLowerCase();
+  const recClass =
+    rec === "approve"
+      ? "ai-chip-rec-approve"
+      : rec === "reject"
+      ? "ai-chip-rec-reject"
+      : "ai-chip-rec-review";
+
   document.getElementById("modal-body").innerHTML = `
-    <div class="list-row">
-      <strong>Type:</strong> ${r.request_type} • <strong>Amount:</strong> ${r.amount} ${r.currency} • <strong>Status:</strong> <span class="status-pill status-${r.status}">${r.status}</span><br/>
-      <strong>Requester:</strong> ${r.requester_name} (${r.department}) • <strong>Urgency:</strong> ${r.urgency}<br/>
-      <p style="margin:8px 0 0;">${r.description}</p>
+    <!-- Structured Key-Value Metadata Grid -->
+    <div class="detail-grid">
+      <div class="detail-grid-cell">
+        <div class="detail-label">Requester</div>
+        <div class="detail-value">${escapeHtml(r.requester_name)}</div>
+        <div class="detail-subvalue">${escapeHtml(r.department || "Company Staff")}</div>
+      </div>
+      <div class="detail-grid-cell">
+        <div class="detail-label">Total Amount</div>
+        <div class="detail-value" style="color:var(--primary);">${formattedAmount}</div>
+        <div class="detail-subvalue">Currency: ${escapeHtml(r.currency)}</div>
+      </div>
+      <div class="detail-grid-cell">
+        <div class="detail-label">Category / Type</div>
+        <div class="detail-value">${humanType}</div>
+        <div class="detail-subvalue">Policy Evaluated</div>
+      </div>
+      <div class="detail-grid-cell">
+        <div class="detail-label">Priority / Urgency</div>
+        <div class="detail-value">
+          <span class="detail-urgency ${urgencyClass}">${urgencyLabel}</span>
+        </div>
+        <div class="detail-subvalue">${r.created_at ? formatDate(r.created_at) : "Standard SLA"}</div>
+      </div>
     </div>
-    <div class="info-box">
-      <strong>AI Decision Support:</strong> Recommends <strong>${r.ai_recommendation}</strong> (confidence ${Math.round((r.ai_confidence || 0) * 100)}%, risk ${Math.round((r.ai_risk_score || 0) * 100)}%)<br/>
-      <span>${r.ai_explanation || ""}</span>
-      ${r.is_anomaly ? `<div style="color:#9A2B17;margin-top:6px;"><strong>Anomaly Flagged (${r.anomaly_score}):</strong> ${r.anomaly_reasons.join("; ")}</div>` : ""}
+
+    <!-- Purpose & Description Box -->
+    <div class="detail-desc-box">
+      <div class="detail-desc-label">Business Purpose &amp; Description</div>
+      <p class="detail-desc-text">${escapeHtml(r.description || "No description provided.")}</p>
     </div>
-    <h4 style="margin:14px 0 6px;">Workflow Stages</h4>
+
+    <!-- AI Decision Support Executive Card -->
+    <div class="ai-support-card">
+      <div class="ai-support-header">
+        <div class="ai-support-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--primary);"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+          AI Decision Support &amp; Policy Analysis
+        </div>
+        <div class="ai-support-chips">
+          <span class="ai-chip ${recClass}">Recommended: <strong>${rec.toUpperCase()}</strong></span>
+          <span class="ai-chip ai-chip-metric">Confidence: <strong>${confPct}%</strong></span>
+          <span class="ai-chip ai-chip-metric" style="${riskPct > 50 ? "color:#DC2626;" : ""}">Risk: <strong>${riskPct}%</strong></span>
+        </div>
+      </div>
+      <div class="ai-support-body">
+        ${escapeHtml(r.ai_explanation || "Automated organizational policy evaluation complete.")}
+      </div>
+      ${
+        r.is_anomaly
+          ? `<div class="ai-anomaly-box">
+               <strong>⚠️ Anomaly Flagged (${r.anomaly_score}):</strong> ${escapeHtml((r.anomaly_reasons || []).join("; "))}
+             </div>`
+          : ""
+      }
+    </div>
+
+    <!-- Workflow Stages & Approval Trail -->
+    <div class="detail-section-header">
+      <h4>Workflow Stages &amp; Approval Trail</h4>
+    </div>
     ${
-      data.tasks.length
-        ? data.tasks
+      data.tasks && data.tasks.length
+        ? `<div class="workflow-timeline">` +
+          data.tasks
             .map(
-              (t) => `<div class="list-row">Stage ${t.stage_index + 1}: <strong>${t.stage_name}</strong> (${t.assigned_role}) — <span class="status-pill status-${t.status === "waiting" ? "pending" : t.status}">${t.status}</span> ${t.comment ? `• "${t.comment}"` : ""}</div>`
+              (t) => `
+            <div class="workflow-step">
+              <div class="workflow-step-num">${t.stage_index + 1}</div>
+              <div class="workflow-step-content">
+                <div class="workflow-step-header">
+                  <div class="workflow-step-title">${escapeHtml(t.stage_name)} <span class="muted small">(${escapeHtml(t.assigned_role)})</span></div>
+                  <span class="status-pill status-${t.status === "waiting" ? "pending" : t.status}">${t.status}</span>
+                </div>
+                ${
+                  t.decision_by_name
+                    ? `<div class="workflow-step-sub">Reviewed by: <strong>${escapeHtml(t.decision_by_name)}</strong></div>`
+                    : `<div class="workflow-step-sub">Assigned to: ${escapeHtml(t.assigned_role)}</div>`
+                }
+                ${t.comment ? `<div class="workflow-step-comment">"${escapeHtml(t.comment)}"</div>` : ""}
+              </div>
+            </div>`
             )
-            .join("")
-        : '<p class="muted small">Completed via automated approval.</p>'
+            .join("") +
+          `</div>`
+        : `
+        <div class="auto-approved-card">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+          <div>
+            <strong>Automated Instant Approval:</strong> Request amount ($${Number(r.amount).toFixed(2)}) meets company policy threshold rules with low risk rating (${riskPct}%). No manual escalation required.
+          </div>
+        </div>
+      `
     }
+
+    <!-- Attachments Section -->
     ${
-      data.attachments.length
-        ? `<h4 style="margin:14px 0 6px;">Attachments</h4>` +
-          data.attachments
-            .map((a) => `<div class="list-row">${a.original_filename} (${a.size_bytes} bytes • Storage: ${a.storage_backend || "local"})</div>`)
-            .join("")
+      data.attachments && data.attachments.length
+        ? `
+        <div class="detail-section-header" style="margin-top:20px;">
+          <h4>Attached Documents (${data.attachments.length})</h4>
+        </div>
+        <div class="attachment-grid">
+          ${data.attachments
+            .map(
+              (a) => `
+            <div class="attachment-card">
+              <div class="attachment-meta">
+                <div class="attachment-filename" title="${escapeHtml(a.original_filename)}">📄 ${escapeHtml(a.original_filename)}</div>
+                <div class="attachment-size">${(a.size_bytes / 1024).toFixed(1)} KB • Storage: ${escapeHtml(a.storage_backend || "local")}</div>
+              </div>
+              <a href="/api/requests/${r.id}/attachments/${a.id}" target="_blank" class="btn btn-secondary btn-sm" style="flex-shrink:0;text-decoration:none;">Download</a>
+            </div>`
+            )
+            .join("")}
+        </div>`
         : ""
     }
+
+    <!-- Approver Decision Card -->
     ${
       canDecide
         ? `
-      <div class="card" style="margin-top:12px;">
-        <h4>Submit Your Decision</h4>
-        <textarea id="decision-comment" rows="2" placeholder="Optional approval or rejection comment..."></textarea>
-        <div class="form-actions">
-          <button class="btn btn-success" onclick="submitDecision(${r.id}, 'approved')">Approve</button>
-          <button class="btn btn-special" onclick="submitDecision(${r.id}, 'rejected')">Reject</button>
+      <div class="card" style="margin-top:20px;border:1px solid var(--primary);box-shadow:var(--shadow-md);">
+        <h4 style="margin-top:0;display:flex;align-items:center;gap:8px;">
+          <span>Submit Approval Decision</span>
+          <span class="muted small">(Action required for your role)</span>
+        </h4>
+        <textarea id="decision-comment" rows="2" placeholder="Provide audit reason or notes for this decision..."></textarea>
+        <div class="form-actions" style="margin-top:12px;display:flex;gap:10px;">
+          <button class="btn btn-success" style="flex:1;" onclick="submitDecision(${r.id}, 'approved')">✓ Approve Request</button>
+          <button class="btn btn-special" style="flex:1;" onclick="submitDecision(${r.id}, 'rejected')">✕ Reject Request</button>
         </div>
       </div>`
         : ""
