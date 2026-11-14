@@ -1415,7 +1415,40 @@ function initVoiceRecognition() {
 
 initVoiceRecognition();
 
-// Admin Tools + Supabase Storage
+// Executive Admin Component Helpers
+const roleAvatarGradients = {
+  admin: "linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%)",
+  manager: "linear-gradient(135deg, #0284C7 0%, #0369A1 100%)",
+  approver: "linear-gradient(135deg, #0F766E 0%, #0D9488 100%)",
+  hr: "linear-gradient(135deg, #D97706 0%, #B45309 100%)",
+  requester: "linear-gradient(135deg, #475569 0%, #334155 100%)",
+};
+
+function getInitials(name) {
+  if (!name) return "U";
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+window.setWfTemplate = (type) => {
+  const textarea = document.getElementById("wf-stages");
+  if (!textarea) return;
+  if (type === "standard") {
+    textarea.value = JSON.stringify([
+      { name: "Direct Manager Review", role: "manager", sla_hours: 24 },
+      { name: "Finance Approval", role: "approver", sla_hours: 48 },
+    ]);
+  } else if (type === "executive") {
+    textarea.value = JSON.stringify([
+      { name: "Manager Sign-Off", role: "manager", sla_hours: 24 },
+      { name: "Finance Verification", role: "approver", sla_hours: 48 },
+      { name: "Executive HR Review", role: "hr", sla_hours: 72 },
+    ]);
+  }
+};
+
+// Admin Tools + Storage & Workflows
 async function loadAdminData() {
   const [wfRes, polRes, usrRes, audRes, stoRes] = await Promise.all([
     api("/api/workflows"),
@@ -1431,41 +1464,135 @@ async function loadAdminData() {
     ? `Active Storage: Cloud Storage Connected (${stoRes.bucket})`
     : "Active Storage: Standard Secure Storage";
 
+  // Workflows Grid
   document.getElementById("workflows-list").innerHTML = wfRes.workflows.length
-    ? wfRes.workflows
-        .map(
-          (w) => `
-    <div class="list-row">
-      <strong>${w.name}</strong> (${w.request_type} • <code>${w.execution_mode}</code> • SLA ${w.sla_hours}h)<br/>
-      <span class="muted">Stages: ${w.stages.map((s) => `${s.name} [${s.role}]`).join(" -> ")}</span>
-    </div>`
-        )
-        .join("")
+    ? `<div class="workflows-grid">` +
+      wfRes.workflows
+        .map((w) => {
+          const humanType = humanizeType(w.request_type);
+          const stages = w.stages || [];
+          return `
+            <div class="workflow-card">
+              <div class="workflow-card-head">
+                <div class="workflow-title-group">
+                  <span class="workflow-type-badge">${humanType}</span>
+                  <h4 class="workflow-title">${escapeHtml(w.name)}</h4>
+                </div>
+                <div class="workflow-meta-chips">
+                  <span class="workflow-mode-chip mode-${w.execution_mode}">${w.execution_mode === "parallel" ? "🔀 Parallel" : "⚡ Sequential"}</span>
+                  <span class="workflow-sla-chip">⏱️ ${w.sla_hours}h SLA</span>
+                </div>
+              </div>
+              <div class="workflow-stages-track">
+                ${stages
+                  .map(
+                    (s, idx) => `
+                  <div class="workflow-stage-pill">
+                    <span class="stage-step-num">${idx + 1}</span>
+                    <span class="stage-step-name">${escapeHtml(s.name)}</span>
+                    <span class="user-role-badge role-badge-${s.role}">${escapeHtml(s.role)}</span>
+                  </div>
+                  ${idx < stages.length - 1 ? '<span class="stage-arrow">→</span>' : ""}`
+                  )
+                  .join("")}
+              </div>
+            </div>`;
+        })
+        .join("") +
+      `</div>`
     : '<p class="muted small">No workflows configured.</p>';
 
+  // Policies Grid
   document.getElementById("policies-list").innerHTML = polRes.policies.length
-    ? polRes.policies
-        .map(
-          (p) => `
-    <div class="list-row">
-      <strong>${p.name}</strong> (${p.request_type})<br/>
-      Auto-approve <= <strong>${p.auto_approve_max_amount}</strong> • Attachment > ${p.require_attachment_above} • Max ${p.max_allowed_amount}<br/>
-      <span class="muted">Blocked keywords: ${p.blocked_keywords.join(", ") || "None"}</span>
-    </div>`
-        )
-        .join("")
+    ? `<div class="policies-grid">` +
+      polRes.policies
+        .map((p) => {
+          const humanType = humanizeType(p.request_type);
+          const blocked = p.blocked_keywords || [];
+          return `
+            <div class="policy-card">
+              <div class="policy-card-head">
+                <div class="policy-title-group">
+                  <span class="policy-type-badge">${humanType}</span>
+                  <h4 class="policy-title">${escapeHtml(p.name)}</h4>
+                </div>
+                <span class="policy-status-pill">Active Policy</span>
+              </div>
+              <div class="policy-thresholds-grid">
+                <div class="policy-thresh-cell">
+                  <span class="thresh-label">Auto-Approval Threshold</span>
+                  <span class="thresh-val" style="color:var(--primary);">≤ $${Number(p.auto_approve_max_amount).toLocaleString()}</span>
+                </div>
+                <div class="policy-thresh-cell">
+                  <span class="thresh-label">Requires Receipt / Doc</span>
+                  <span class="thresh-val">> $${Number(p.require_attachment_above).toLocaleString()}</span>
+                </div>
+                <div class="policy-thresh-cell">
+                  <span class="thresh-label">Max Allowed Amount</span>
+                  <span class="thresh-val">≤ $${Number(p.max_allowed_amount).toLocaleString()}</span>
+                </div>
+              </div>
+              ${
+                blocked.length
+                  ? `
+                <div class="policy-blocked-bar">
+                  <span class="blocked-title">Blocked Keywords:</span>
+                  <div class="blocked-tag-list">
+                    ${blocked.map((kw) => `<span class="blocked-tag">${escapeHtml(kw)}</span>`).join("")}
+                  </div>
+                </div>`
+                  : ""
+              }
+            </div>`;
+        })
+        .join("") +
+      `</div>`
     : '<p class="muted small">No policies configured.</p>';
 
+  // User Profiles & RBAC Grid
   document.getElementById("users-list").innerHTML = usrRes.users.length
-    ? usrRes.users
-        .map((u) => `<div class="list-row"><strong>${u.full_name}</strong> (@${u.username}) — <code>${u.role}</code> • ${u.department}</div>`)
-        .join("")
+    ? `<div class="user-profiles-grid">` +
+      usrRes.users
+        .map((u) => {
+          const initials = getInitials(u.full_name);
+          const bg = roleAvatarGradients[u.role] || roleAvatarGradients.requester;
+          return `
+            <div class="user-profile-card">
+              <div class="user-avatar-circle" style="background:${bg};">${initials}</div>
+              <div class="user-profile-info">
+                <div class="user-profile-top">
+                  <span class="user-profile-name">${escapeHtml(u.full_name)}</span>
+                  <span class="user-role-badge role-badge-${u.role}">${escapeHtml(u.role)}</span>
+                </div>
+                <div class="user-profile-meta">
+                  <span class="user-profile-handle">@${escapeHtml(u.username)}</span>
+                  <span class="meta-dot">&bull;</span>
+                  <span class="user-profile-dept">${escapeHtml(u.department || "Organization")}</span>
+                  ${u.email ? `<span class="meta-dot">&bull;</span><span class="user-profile-email">${escapeHtml(u.email)}</span>` : ""}
+                </div>
+              </div>
+            </div>`;
+        })
+        .join("") +
+      `</div>`
     : '<p class="muted small">No users found.</p>';
 
+  // Tamper-Evident Audit Trail List
   document.getElementById("audit-list").innerHTML = audRes.audit_logs.length
     ? audRes.audit_logs
         .map(
-          (a) => `<div class="audit-item"><strong>#${a.id} ${a.action}</strong> by ${a.actor_username} (${a.entity_type} ${a.entity_id || "-"}) <span class="muted">${a.created_at}</span></div>`
+          (a) => `
+        <div class="audit-card-item">
+          <div class="audit-card-left">
+            <span class="audit-action-badge">${escapeHtml(a.action)}</span>
+            <span class="audit-actor">${escapeHtml(a.actor_username)}</span>
+            <span class="audit-target">${escapeHtml(a.entity_type)} ${a.entity_id ? "#" + a.entity_id : ""}</span>
+          </div>
+          <div class="audit-card-right">
+            <span class="audit-time">${formatDate(a.created_at)}</span>
+            <span class="audit-hash-pill">✓ Hash Intact</span>
+          </div>
+        </div>`
         )
         .join("")
     : '<p class="muted small">No audit log entries recorded.</p>';

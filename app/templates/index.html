@@ -408,51 +408,60 @@
           <div class="card">
             <h3>Approval Workflows</h3>
             <div id="workflows-list"></div>
-            <hr />
-            <h4>Create Workflow</h4>
+            <hr style="margin:18px 0;border:0;border-top:1px solid var(--border);" />
+            <h4 style="margin-top:0;">Create Workflow Pipeline</h4>
             <form id="workflow-form">
-              <input type="text" id="wf-name" placeholder="Workflow Name" required />
+              <input type="text" id="wf-name" placeholder="Workflow Pipeline Name (e.g. Executive Capex Approval)" required />
               <div class="form-row">
                 <select id="wf-type">
-                  <option value="expense_report">expense_report</option>
-                  <option value="leave_request">leave_request</option>
-                  <option value="purchase_order">purchase_order</option>
+                  <option value="expense_report">Expense Report</option>
+                  <option value="leave_request">Leave Request</option>
+                  <option value="purchase_order">Purchase Order</option>
                 </select>
                 <select id="wf-mode">
-                  <option value="sequential">sequential</option>
-                  <option value="parallel">parallel</option>
+                  <option value="sequential">Sequential Approval</option>
+                  <option value="parallel">Parallel Approval</option>
                 </select>
               </div>
-              <input type="text" id="wf-stages" placeholder='[{"name":"Stage Name","role":"manager","sla_hours":24}]' />
-              <button type="submit" class="btn btn-special btn-sm" style="margin-top:8px;">Add Workflow</button>
+              <div style="margin-top:6px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;flex-wrap:wrap;gap:4px;">
+                  <span style="font-size:0.75rem;font-weight:700;text-transform:uppercase;color:var(--muted);">Routing Stages:</span>
+                  <div style="display:flex;gap:4px;">
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="setWfTemplate('standard')" style="font-size:0.7rem;padding:2px 7px;">+ 2-Stage Chain</button>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="setWfTemplate('executive')" style="font-size:0.7rem;padding:2px 7px;">+ 3-Stage Exec</button>
+                  </div>
+                </div>
+                <textarea id="wf-stages" rows="2" style="font-family:ui-monospace,SFMono-Regular,monospace;font-size:0.8rem;" placeholder='[{"name":"Manager Review","role":"manager","sla_hours":24}]'>[{"name":"Manager Review","role":"manager","sla_hours":24},{"name":"Finance Approval","role":"approver","sla_hours":48}]</textarea>
+              </div>
+              <button type="submit" class="btn btn-special btn-sm" style="margin-top:10px;">Create Workflow Pipeline</button>
             </form>
           </div>
 
           <div class="card">
             <h3>User Profiles &amp; RBAC</h3>
             <div id="users-list"></div>
-            <hr />
-            <h4>Add User</h4>
+            <hr style="margin:18px 0;border:0;border-top:1px solid var(--border);" />
+            <h4 style="margin-top:0;">Provision New User</h4>
             <form id="user-form">
               <div class="form-row">
-                <input type="text" id="u-username" placeholder="Username" required />
-                <input type="password" id="u-password" placeholder="Password" required />
+                <input type="text" id="u-username" placeholder="Username (e.g. priya.patel)" required />
+                <input type="password" id="u-password" placeholder="Temporary Password" required />
               </div>
               <div class="form-row">
-                <input type="text" id="u-fullname" placeholder="Full Name" required />
-                <input type="email" id="u-email" placeholder="Email" required />
+                <input type="text" id="u-fullname" placeholder="Full Name (e.g. Priya Patel)" required />
+                <input type="email" id="u-email" placeholder="Corporate Email" required />
               </div>
               <div class="form-row">
                 <select id="u-role">
-                  <option value="requester">requester</option>
-                  <option value="manager">manager</option>
-                  <option value="approver">approver</option>
-                  <option value="hr">hr</option>
-                  <option value="admin">admin</option>
+                  <option value="requester">Requester (Standard Staff)</option>
+                  <option value="manager">Manager (Team Reviewer)</option>
+                  <option value="approver">Approver (Finance Officer)</option>
+                  <option value="hr">HR (People Operations)</option>
+                  <option value="admin">Administrator (IT Security)</option>
                 </select>
-                <input type="text" id="u-dept" placeholder="Department" />
+                <input type="text" id="u-dept" placeholder="Department (e.g. Product)" />
               </div>
-              <button type="submit" class="btn btn-special btn-sm" style="margin-top:8px;">Create User</button>
+              <button type="submit" class="btn btn-special btn-sm" style="margin-top:10px;">Create User Account</button>
             </form>
           </div>
         </div>

@@ -1780,7 +1780,484 @@ tbody tr:last-child td {
   color: var(--muted);
 }
 
-.audit-list { max-height: 300px; overflow-y: auto; font-size: 0.88rem; }
+/* ================================================================
+   Executive Admin Dashboard Cards & Components
+   ================================================================ */
+
+/* User Profiles & RBAC Cards */
+.user-profiles-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.user-profile-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.user-profile-card:hover {
+  border-color: var(--border-soft);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+.user-avatar-circle {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.84rem;
+  color: #FFFFFF;
+  flex-shrink: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.user-profile-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.user-profile-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.user-profile-name {
+  font-size: 0.94rem;
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.user-role-badge {
+  padding: 3px 9px;
+  border-radius: 9999px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  display: inline-block;
+  white-space: nowrap;
+}
+.role-badge-admin {
+  background: rgba(139, 92, 246, 0.12);
+  color: #7C3AED;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+.role-badge-manager {
+  background: rgba(2, 132, 199, 0.12);
+  color: #0284C7;
+  border: 1px solid rgba(2, 132, 199, 0.3);
+}
+.role-badge-approver {
+  background: rgba(16, 185, 129, 0.12);
+  color: #059669;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+.role-badge-hr {
+  background: rgba(245, 158, 11, 0.12);
+  color: #D97706;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+.role-badge-requester {
+  background: rgba(100, 116, 139, 0.12);
+  color: #475569;
+  border: 1px solid rgba(100, 116, 139, 0.3);
+}
+:root[data-theme="dark"] .role-badge-admin {
+  background: rgba(139, 92, 246, 0.2);
+  color: #A78BFA;
+  border-color: rgba(167, 139, 250, 0.35);
+}
+:root[data-theme="dark"] .role-badge-manager {
+  background: rgba(56, 189, 248, 0.18);
+  color: #38BDF8;
+  border-color: rgba(56, 189, 248, 0.35);
+}
+:root[data-theme="dark"] .role-badge-approver {
+  background: rgba(16, 185, 129, 0.18);
+  color: #34D399;
+  border-color: rgba(52, 211, 153, 0.35);
+}
+:root[data-theme="dark"] .role-badge-hr {
+  background: rgba(251, 191, 36, 0.18);
+  color: #FBBF24;
+  border-color: rgba(251, 191, 36, 0.35);
+}
+:root[data-theme="dark"] .role-badge-requester {
+  background: rgba(148, 163, 184, 0.18);
+  color: #CBD5E1;
+  border-color: rgba(148, 163, 184, 0.35);
+}
+.user-profile-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: var(--muted);
+  flex-wrap: wrap;
+}
+.user-profile-handle {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: var(--muted);
+}
+.user-profile-dept {
+  font-weight: 500;
+  color: var(--ink);
+}
+.user-profile-email {
+  color: var(--muted);
+}
+.meta-dot {
+  color: var(--border-soft);
+  font-size: 0.85rem;
+}
+
+/* Approval Workflows Cards */
+.workflows-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.workflow-card {
+  padding: 14px 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.workflow-card:hover {
+  border-color: var(--border-soft);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+.workflow-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.workflow-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.workflow-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+.workflow-type-badge {
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--bg-subtle);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+.workflow-meta-chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.workflow-mode-chip {
+  padding: 3px 9px;
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.workflow-mode-chip.mode-sequential {
+  background: rgba(15, 118, 110, 0.1);
+  color: #0F766E;
+  border: 1px solid rgba(15, 118, 110, 0.25);
+}
+.workflow-mode-chip.mode-parallel {
+  background: rgba(99, 102, 241, 0.1);
+  color: #4F46E5;
+  border: 1px solid rgba(99, 102, 241, 0.25);
+}
+:root[data-theme="dark"] .workflow-mode-chip.mode-sequential {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34D399;
+}
+:root[data-theme="dark"] .workflow-mode-chip.mode-parallel {
+  background: rgba(129, 140, 248, 0.18);
+  color: #818CF8;
+}
+.workflow-sla-chip {
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: var(--bg-subtle);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+.workflow-stages-track {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  background: var(--bg-subtle);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+.workflow-stage-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.78rem;
+}
+.stage-step-num {
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.68rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.stage-step-name {
+  font-weight: 600;
+  color: var(--ink);
+}
+.stage-arrow {
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+/* Compliance Policies Cards */
+.policies-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.policy-card {
+  padding: 14px 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.policy-card:hover {
+  border-color: var(--border-soft);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+.policy-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.policy-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.policy-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+.policy-type-badge {
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--bg-subtle);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+.policy-status-pill {
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: rgba(16, 185, 129, 0.12);
+  color: #059669;
+  border: 1px solid rgba(16, 185, 129, 0.28);
+}
+:root[data-theme="dark"] .policy-status-pill {
+  background: rgba(16, 185, 129, 0.18);
+  color: #34D399;
+}
+.policy-thresholds-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+}
+.policy-thresh-cell {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.thresh-label {
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.thresh-val {
+  font-size: 0.94rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+.policy-blocked-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 0.76rem;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.05);
+  border: 1px solid rgba(239, 68, 68, 0.18);
+}
+.blocked-title {
+  font-weight: 700;
+  color: #DC2626;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+.blocked-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.blocked-tag {
+  padding: 1px 7px;
+  border-radius: 4px;
+  background: rgba(239, 68, 68, 0.1);
+  color: #DC2626;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+:root[data-theme="dark"] .blocked-tag {
+  color: #F87171;
+  background: rgba(239, 68, 68, 0.2);
+}
+
+/* Audit Trail Items */
+.audit-list {
+  max-height: 340px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-right: 4px;
+}
+.audit-card-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 12px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 0.82rem;
+  transition: background-color 0.15s ease;
+}
+.audit-card-item:hover {
+  background: var(--card-bg);
+}
+.audit-card-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.audit-action-badge {
+  padding: 2px 7px;
+  border-radius: 5px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  background: rgba(15, 118, 110, 0.1);
+  color: #0F766E;
+  border: 1px solid rgba(15, 118, 110, 0.25);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+}
+:root[data-theme="dark"] .audit-action-badge {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34D399;
+}
+.audit-actor {
+  color: var(--ink);
+  font-weight: 600;
+}
+.audit-target {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+.audit-card-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.74rem;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.audit-hash-pill {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(16, 185, 129, 0.1);
+  color: #059669;
+  font-weight: 700;
+  font-size: 0.68rem;
+}
+
 .audit-item { padding: 9px 0; border-bottom: 1px solid var(--border); }
 .list-row {
   padding: 12px 16px;
