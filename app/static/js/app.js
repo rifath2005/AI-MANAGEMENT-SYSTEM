@@ -914,9 +914,43 @@ window.applyDynamicRule = async (policyId) => {
 };
 
 // Requests Table & Detail Modal
+let cachedRequests = [];
+
+function renderRequestsTable() {
+  const tbody = document.getElementById("requests-tbody");
+  if (!tbody) return;
+  const searchVal = (document.getElementById("filter-search")?.value || "").toLowerCase().trim();
+  let list = cachedRequests;
+  if (searchVal) {
+    list = list.filter((r) =>
+      String(r.id).includes(searchVal) ||
+      (r.title && r.title.toLowerCase().includes(searchVal)) ||
+      (r.requester_name && r.requester_name.toLowerCase().includes(searchVal)) ||
+      (r.request_type && r.request_type.toLowerCase().includes(searchVal))
+    );
+  }
+  tbody.innerHTML = list.length
+    ? list
+        .map(
+          (r) => `
+    <tr>
+      <td>#${r.id}</td>
+      <td><strong>${escapeHtml(r.title)}</strong><div class="muted small">${humanizeType(r.request_type)}</div></td>
+      <td>${escapeHtml(r.requester_name)}</td>
+      <td>${Number(r.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })} ${escapeHtml(r.currency)}</td>
+      <td><span class="status-pill status-${r.status}">${r.status}</span>${r.auto_approved ? ' <span class="small muted">(Auto)</span>' : ""}</td>
+      <td>${r.ai_recommendation || "-"} (${Math.round((r.ai_risk_score || 0) * 100)}% risk)${r.is_anomaly ? ' <strong>[Anomaly]</strong>' : ""}</td>
+      <td><button class="btn btn-sm btn-primary" onclick="openRequestDetail(${r.id})">View</button></td>
+    </tr>`
+        )
+        .join("")
+    : '<tr><td colspan="7" class="muted small" style="text-align:center;padding:26px;">No requests found matching current filter.</td></tr>';
+}
+
 document.getElementById("refresh-requests-btn").addEventListener("click", loadRequests);
 document.getElementById("filter-scope").addEventListener("change", loadRequests);
 document.getElementById("filter-status").addEventListener("change", loadRequests);
+document.getElementById("filter-search")?.addEventListener("input", renderRequestsTable);
 
 async function loadRequests() {
   const scope = document.getElementById("filter-scope").value;
@@ -925,22 +959,8 @@ async function loadRequests() {
   if (scope) params.set("scope", scope);
   if (status) params.set("status", status);
   const res = await api(`/api/requests?${params.toString()}`);
-  tbody.innerHTML = res.requests.length
-    ? res.requests
-        .map(
-          (r) => `
-    <tr>
-      <td>#${r.id}</td>
-      <td><strong>${r.title}</strong><div class="muted small">${r.request_type}</div></td>
-      <td>${r.requester_name}</td>
-      <td>${r.amount} ${r.currency}</td>
-      <td><span class="status-pill status-${r.status}">${r.status}</span>${r.auto_approved ? ' <span class="small muted">(Auto)</span>' : ""}</td>
-      <td>${r.ai_recommendation || "-"} (${Math.round((r.ai_risk_score || 0) * 100)}% risk)${r.is_anomaly ? ' <strong>[Anomaly]</strong>' : ""}</td>
-      <td><button class="btn btn-sm btn-primary" onclick="openRequestDetail(${r.id})">View</button></td>
-    </tr>`
-        )
-        .join("")
-    : '<tr><td colspan="7" class="muted small" style="text-align:center;padding:26px;">No requests found matching current filter.</td></tr>';
+  cachedRequests = res.requests || [];
+  renderRequestsTable();
 }
 
 function escapeHtml(str) {
@@ -1464,6 +1484,8 @@ async function loadAdminData() {
     ? `Active Storage: Cloud Storage Connected (${stoRes.bucket})`
     : "Active Storage: Standard Secure Storage";
 
+  window._cachedPolicies = polRes.policies || [];
+
   // Workflows Grid
   document.getElementById("workflows-list").innerHTML = wfRes.workflows.length
     ? `<div class="workflows-grid">` +
@@ -1479,6 +1501,7 @@ async function loadAdminData() {
                   <h4 class="workflow-title">${escapeHtml(w.name)}</h4>
                 </div>
                 <div class="workflow-meta-chips">
+                  <button class="btn btn-secondary btn-sm" onclick="toggleWorkflowActive(${w.id}, ${!w.is_active})" style="font-size:0.7rem;padding:2px 8px;">${w.is_active ? "Pause" : "Activate"}</button>
                   <span class="workflow-mode-chip mode-${w.execution_mode}">${w.execution_mode === "parallel" ? "🔀 Parallel" : "⚡ Sequential"}</span>
                   <span class="workflow-sla-chip">⏱️ ${w.sla_hours}h SLA</span>
                 </div>
@@ -1516,7 +1539,10 @@ async function loadAdminData() {
                   <span class="policy-type-badge">${humanType}</span>
                   <h4 class="policy-title">${escapeHtml(p.name)}</h4>
                 </div>
-                <span class="policy-status-pill">Active Policy</span>
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <span class="policy-status-pill">${p.is_active ? "Active Policy" : "Inactive"}</span>
+                  <button class="btn btn-secondary btn-sm" onclick="openPolicyModal(${p.id})" style="font-size:0.75rem;padding:3px 10px;">⚙️ Adjust Thresholds</button>
+                </div>
               </div>
               <div class="policy-thresholds-grid">
                 <div class="policy-thresh-cell">
@@ -1667,4 +1693,73 @@ document.getElementById("verify-audit-btn").addEventListener("click", async () =
     : `Integrity broken at audit ID #${res.broken_at_id}`;
 });
 
+// Admin Policy Threshold Adjustment Modal Handlers
+window.openPolicyModal = (policyId) => {
+  const p = (window._cachedPolicies || []).find((x) => x.id === policyId);
+  if (!p) return;
+  document.getElementById("edit-policy-id").value = p.id;
+  document.getElementById("policy-modal-title").textContent = `Adjust Thresholds — ${p.name}`;
+  document.getElementById("policy-modal-badge").textContent = humanizeType(p.request_type);
+  document.getElementById("edit-auto-max").value = p.auto_approve_max_amount;
+  document.getElementById("edit-attach-above").value = p.require_attachment_above;
+  document.getElementById("edit-max-allowed").value = p.max_allowed_amount;
+  document.getElementById("edit-blocked-keywords").value = (p.blocked_keywords || []).join(", ");
+  document.getElementById("edit-dynamic-adj").checked = Boolean(p.dynamic_adjustment_enabled);
+  showEl(document.getElementById("policy-modal"), true);
+};
+
+document.getElementById("policy-modal-close-btn")?.addEventListener("click", () => {
+  showEl(document.getElementById("policy-modal"), false);
+});
+
+document.getElementById("policy-cancel-btn")?.addEventListener("click", () => {
+  showEl(document.getElementById("policy-modal"), false);
+});
+
+document.getElementById("policy-edit-form")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const policyId = document.getElementById("edit-policy-id").value;
+  const autoMax = parseFloat(document.getElementById("edit-auto-max").value);
+  const attachAbove = parseFloat(document.getElementById("edit-attach-above").value);
+  const maxAllowed = parseFloat(document.getElementById("edit-max-allowed").value);
+  const blockedRaw = document.getElementById("edit-blocked-keywords").value;
+  const blockedKeywords = blockedRaw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const dynamicEnabled = document.getElementById("edit-dynamic-adj").checked;
+
+  try {
+    await api(`/api/policies/${policyId}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        auto_approve_max_amount: autoMax,
+        require_attachment_above: attachAbove,
+        max_allowed_amount: maxAllowed,
+        blocked_keywords: blockedKeywords,
+        dynamic_adjustment_enabled: dynamicEnabled,
+      }),
+    });
+    showEl(document.getElementById("policy-modal"), false);
+    loadAdminData();
+    alert("Policy thresholds updated successfully and committed to the audit trail.");
+  } catch (err) {
+    alert("Failed to update policy: " + err.message);
+  }
+});
+
+// Admin Workflow Active Toggle Handler
+window.toggleWorkflowActive = async (workflowId, makeActive) => {
+  try {
+    await api(`/api/workflows/${workflowId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ is_active: makeActive }),
+    });
+    loadAdminData();
+  } catch (err) {
+    alert("Failed to update workflow: " + err.message);
+  }
+};
+
 bootstrap();
+

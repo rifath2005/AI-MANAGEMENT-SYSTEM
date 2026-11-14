@@ -272,6 +272,7 @@
         <div class="panel-header">
           <h2>Requests &amp; Approval Queue</h2>
           <div class="filter-bar">
+            <input type="text" id="filter-search" placeholder="Search by title, ID, requester..." style="max-width:240px;padding:6px 12px;font-size:0.85rem;" />
             <select id="filter-scope">
               <option value="">All Accessible</option>
               <option value="mine">My Submitted</option>
@@ -488,6 +489,57 @@
         <button id="modal-close-btn" class="btn btn-secondary btn-sm">Close</button>
       </div>
       <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Policy Threshold Adjustment Modal -->
+  <div id="policy-modal" class="modal hidden">
+    <div class="modal-card" style="max-width:580px;">
+      <div class="modal-header">
+        <div style="flex:1;">
+          <div class="modal-header-badges">
+            <span class="detail-badge-type" id="policy-modal-badge">Policy Thresholds</span>
+            <span class="policy-status-pill">Active Governance</span>
+          </div>
+          <h3 class="modal-title-text" id="policy-modal-title" style="margin-top:4px;">Adjust Policy Thresholds</h3>
+        </div>
+        <button id="policy-modal-close-btn" class="btn btn-secondary btn-sm">Close</button>
+      </div>
+      <form id="policy-edit-form">
+        <input type="hidden" id="edit-policy-id" />
+        
+        <label>Auto-Approval Maximum Limit ($)
+          <input type="number" step="0.01" id="edit-auto-max" required />
+          <span class="field-hint muted">Requests at or below this amount with low AI risk score will approve automatically.</span>
+        </label>
+        
+        <label style="margin-top:12px;">Documentation Required Above ($)
+          <input type="number" step="0.01" id="edit-attach-above" required />
+          <span class="field-hint muted">Mandatory receipt/invoice attachment threshold.</span>
+        </label>
+        
+        <label style="margin-top:12px;">Spending Ceiling / Max Allowed ($)
+          <input type="number" step="0.01" id="edit-max-allowed" required />
+          <span class="field-hint muted">Hard limit. Requests exceeding this amount cannot be submitted.</span>
+        </label>
+        
+        <label style="margin-top:12px;">Blocked Keywords (Comma-separated)
+          <input type="text" id="edit-blocked-keywords" placeholder="e.g. rush cash, offshore, non-approved" />
+          <span class="field-hint muted">Requests containing these keywords trigger anomaly alerts and prevent auto-approval.</span>
+        </label>
+        
+        <div style="margin-top:14px;display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg-subtle);border-radius:10px;border:1px solid var(--border);">
+          <input type="checkbox" id="edit-dynamic-adj" style="width:16px;height:16px;margin:0;" />
+          <label for="edit-dynamic-adj" style="margin:0;font-size:0.86rem;font-weight:600;cursor:pointer;">
+            Enable AI-driven dynamic threshold proposal adaptation
+          </label>
+        </div>
+
+        <div class="form-actions" style="margin-top:18px;display:flex;justify-content:flex-end;gap:10px;">
+          <button type="button" id="policy-cancel-btn" class="btn btn-secondary btn-sm">Cancel</button>
+          <button type="submit" class="btn btn-special btn-sm">Save Threshold Changes</button>
+        </div>
+      </form>
     </div>
   </div>
 
