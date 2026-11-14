@@ -225,40 +225,48 @@ const toggleLoginPassBtn = document.getElementById("toggle-login-pass");
 const loginSubmitBtn = document.getElementById("login-submit-btn");
 const loginPasswordHint = document.getElementById("login-password-hint");
 
+function triggerEmailAttention() {
+  if (!loginEmailInput) return;
+  loginEmailInput.classList.remove("shake-highlight");
+  void loginEmailInput.offsetWidth;
+  loginEmailInput.classList.add("shake-highlight");
+  setTimeout(() => {
+    loginEmailInput.classList.remove("shake-highlight");
+  }, 450);
+}
+
 function updateLoginEmailGate(userTriggered = false) {
   if (!loginEmailInput || !loginPasswordInput) return;
   const raw = loginEmailInput.value;
   const trimmed = raw.trim();
   const isValid = validateEmailFormat(trimmed);
 
+  // Always keep password input accessible and responsive to clicks
+  loginPasswordInput.disabled = false;
+  if (toggleLoginPassBtn) toggleLoginPassBtn.disabled = false;
+
   if (isValid) {
-    // Proper email entered -> open password section
-    loginPasswordInput.disabled = false;
     loginPasswordInput.placeholder = "Enter your password";
-    if (toggleLoginPassBtn) toggleLoginPassBtn.disabled = false;
     clearFieldError("login-email", "login-email-error");
     clearFieldError("login-username", "login-username-error");
     if (loginPasswordHint) {
-      loginPasswordHint.textContent = "Email verified. Password section unlocked.";
+      loginPasswordHint.textContent = "✓ Email verified. Password section active.";
       loginPasswordHint.style.color = "var(--primary, #059669)";
     }
     if (loginSubmitBtn) {
       loginSubmitBtn.disabled = loginPasswordInput.value.length === 0;
     }
   } else {
-    // Incomplete or invalid email -> keep password section locked
-    loginPasswordInput.disabled = true;
-    loginPasswordInput.placeholder = "Enter valid email first";
-    if (toggleLoginPassBtn) toggleLoginPassBtn.disabled = true;
+    loginPasswordInput.placeholder = "Enter your password";
     if (loginSubmitBtn) loginSubmitBtn.disabled = true;
     if (loginPasswordHint) {
-      loginPasswordHint.textContent = "Password unlocks after entering a valid corporate email.";
+      loginPasswordHint.textContent = "Corporate email required to authenticate.";
       loginPasswordHint.style.color = "";
     }
 
     if (trimmed.length > 0 && userTriggered) {
       setFieldError("login-email", "login-email-error", "Please enter a valid corporate email address (e.g. name@company.com).");
-    } else {
+    } else if (userTriggered) {
       clearFieldError("login-email", "login-email-error");
     }
   }
@@ -286,12 +294,40 @@ if (loginEmailInput) {
 }
 
 if (loginPasswordInput) {
+  // Click responds immediately with guidance even when email is invalid
+  loginPasswordInput.addEventListener("click", () => {
+    const emailVal = loginEmailInput ? loginEmailInput.value.trim() : "";
+    if (!validateEmailFormat(emailVal)) {
+      setFieldError("login-email", "login-email-error", "Please enter your corporate email address (e.g. name@company.com).");
+      triggerEmailAttention();
+    }
+  });
+
+  loginPasswordInput.addEventListener("focus", () => {
+    const emailVal = loginEmailInput ? loginEmailInput.value.trim() : "";
+    if (!validateEmailFormat(emailVal)) {
+      setFieldError("login-email", "login-email-error", "Please enter your corporate email address (e.g. name@company.com).");
+      triggerEmailAttention();
+    }
+  });
+
   loginPasswordInput.addEventListener("input", () => {
     clearFieldError("login-password", "login-password-error");
     showEl(document.getElementById("login-error"), false);
     const emailVal = loginEmailInput ? loginEmailInput.value.trim() : "";
     if (loginSubmitBtn) {
       loginSubmitBtn.disabled = !(validateEmailFormat(emailVal) && loginPasswordInput.value.length > 0);
+    }
+  });
+}
+
+const loginPasswordWrap = document.querySelector("#login-form .password-wrap");
+if (loginPasswordWrap) {
+  loginPasswordWrap.addEventListener("click", () => {
+    const emailVal = loginEmailInput ? loginEmailInput.value.trim() : "";
+    if (!validateEmailFormat(emailVal)) {
+      setFieldError("login-email", "login-email-error", "Please enter your corporate email address (e.g. name@company.com).");
+      triggerEmailAttention();
     }
   });
 }
@@ -312,31 +348,81 @@ function updateSignupEmailGate(userTriggered = false) {
   const trimmed = raw.trim();
   const isValid = validateEmailFormat(trimmed);
 
+  signupPasswordInput.disabled = false;
+  if (toggleSignupPassBtn) toggleSignupPassBtn.disabled = false;
+
   if (isValid) {
-    signupPasswordInput.disabled = false;
     signupPasswordInput.placeholder = "Create a strong password";
-    if (toggleSignupPassBtn) toggleSignupPassBtn.disabled = false;
     clearFieldError("signup-email", "signup-email-error");
-    if (signupPasswordHint) signupPasswordHint.textContent = "Email verified. Choose a strong password matching all rules.";
+    if (signupPasswordHint) {
+      signupPasswordHint.textContent = "✓ Email verified. Choose a strong password.";
+      signupPasswordHint.style.color = "var(--primary, #059669)";
+    }
     if (signupStrengthBox) showEl(signupStrengthBox, true);
   } else {
-    signupPasswordInput.disabled = true;
-    signupPasswordInput.placeholder = "Enter valid email first";
-    if (toggleSignupPassBtn) toggleSignupPassBtn.disabled = true;
-    if (signupPasswordHint) signupPasswordHint.textContent = "Password unlocks after entering a valid corporate email.";
+    signupPasswordInput.placeholder = "Create a strong password";
+    if (signupPasswordHint) {
+      signupPasswordHint.textContent = "Corporate email required to request access.";
+      signupPasswordHint.style.color = "";
+    }
     if (signupStrengthBox) showEl(signupStrengthBox, false);
 
-    if (trimmed.length > 0) {
+    if (trimmed.length > 0 && userTriggered) {
       setFieldError("signup-email", "signup-email-error", "Please enter a valid corporate email address (e.g. name@company.com).");
+    } else if (userTriggered) {
+      setFieldError("signup-email", "signup-email-error", "Corporate email is required.");
     } else {
-      if (userTriggered) {
-        setFieldError("signup-email", "signup-email-error", "Corporate email is required.");
-      } else {
-        clearFieldError("signup-email", "signup-email-error");
-      }
+      clearFieldError("signup-email", "signup-email-error");
     }
   }
   checkSignupFormValidity();
+}
+
+function triggerSignupEmailAttention() {
+  if (!signupEmailInput) return;
+  signupEmailInput.classList.remove("shake-highlight");
+  void signupEmailInput.offsetWidth;
+  signupEmailInput.classList.add("shake-highlight");
+  setTimeout(() => {
+    signupEmailInput.classList.remove("shake-highlight");
+  }, 450);
+}
+
+if (signupPasswordInput) {
+  signupPasswordInput.addEventListener("click", () => {
+    const emailVal = signupEmailInput ? signupEmailInput.value.trim() : "";
+    if (!validateEmailFormat(emailVal)) {
+      setFieldError("signup-email", "signup-email-error", "Please enter your corporate email address (e.g. name@company.com).");
+      triggerSignupEmailAttention();
+    }
+  });
+
+  signupPasswordInput.addEventListener("focus", () => {
+    const emailVal = signupEmailInput ? signupEmailInput.value.trim() : "";
+    if (!validateEmailFormat(emailVal)) {
+      setFieldError("signup-email", "signup-email-error", "Please enter your corporate email address (e.g. name@company.com).");
+      triggerSignupEmailAttention();
+    }
+  });
+
+  signupPasswordInput.addEventListener("input", () => {
+    clearFieldError("signup-password", "signup-password-error");
+    showEl(document.getElementById("signup-error"), false);
+    const evalResult = evaluatePasswordStrength(signupPasswordInput.value);
+    updatePasswordStrengthUI(evalResult);
+    checkSignupFormValidity();
+  });
+}
+
+const signupPasswordWrap = document.querySelector("#signup-form .password-wrap");
+if (signupPasswordWrap) {
+  signupPasswordWrap.addEventListener("click", () => {
+    const emailVal = signupEmailInput ? signupEmailInput.value.trim() : "";
+    if (!validateEmailFormat(emailVal)) {
+      setFieldError("signup-email", "signup-email-error", "Please enter your corporate email address (e.g. name@company.com).");
+      triggerSignupEmailAttention();
+    }
+  });
 }
 
 if (signupEmailInput) {
@@ -348,16 +434,6 @@ if (signupEmailInput) {
   signupEmailInput.addEventListener("blur", () => {
     signupEmailInput.value = signupEmailInput.value.trim().toLowerCase();
     updateSignupEmailGate(true);
-  });
-}
-
-if (signupPasswordInput) {
-  signupPasswordInput.addEventListener("input", () => {
-    clearFieldError("signup-password", "signup-password-error");
-    showEl(document.getElementById("signup-error"), false);
-    const evalResult = evaluatePasswordStrength(signupPasswordInput.value);
-    updatePasswordStrengthUI(evalResult);
-    checkSignupFormValidity();
   });
 }
 

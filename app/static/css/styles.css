@@ -484,6 +484,18 @@ input:disabled, select:disabled, textarea:disabled, button:disabled {
   line-height: 1.35;
 }
 
+@keyframes inputShake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-6px); }
+  40%, 80% { transform: translateX(6px); }
+}
+
+.shake-highlight {
+  animation: inputShake 0.35s ease-in-out !important;
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.22) !important;
+}
+
 /* Password Strength & Live Validation Meter */
 .password-strength-box {
   background: var(--sage-soft);
