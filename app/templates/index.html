@@ -98,22 +98,22 @@
 
         <!-- Sign-In Form (always empty by default — zero prefilled credentials) -->
         <form id="login-form" autocomplete="on" novalidate>
-          <label for="login-email">Corporate Email <span class="req-star" title="Required">*</span>
-            <input type="email" id="login-email" name="email" autocomplete="email" placeholder="e.g. nadia.patel@company.com" required aria-required="true" aria-describedby="login-email-error" />
+          <label for="login-email">{% if portal_role == 'admin' %}Administrator Email or Username{% else %}Corporate Email{% endif %} <span class="req-star" title="Required">*</span>
+            <input type="{% if portal_role == 'admin' %}text{% else %}email{% endif %}" id="login-email" name="email" autocomplete="username" placeholder="{% if portal_role == 'admin' %}e.g. sysadmin or sysadmin@company.com{% else %}e.g. nadia.patel@company.com{% endif %}" required aria-required="true" aria-describedby="login-email-error" />
           </label>
           <span id="login-email-error" class="field-error hidden" role="alert"></span>
           <span id="login-username-error" class="field-error hidden" role="alert"></span>
 
           <label for="login-password">Password <span class="req-star" title="Required">*</span>
             <div class="password-wrap">
-              <input type="password" id="login-password" name="password" autocomplete="current-password" placeholder="Enter valid email first" required aria-required="true" aria-describedby="login-password-error" disabled />
-              <button type="button" class="toggle-pass-btn" id="toggle-login-pass" disabled aria-label="Toggle password visibility">Show</button>
+              <input type="password" id="login-password" name="password" autocomplete="current-password" placeholder="{% if portal_role == 'admin' %}Enter your password{% else %}Enter valid email first{% endif %}" required aria-required="true" aria-describedby="login-password-error" {% if portal_role != 'admin' %}disabled {% endif %}/>
+              <button type="button" class="toggle-pass-btn" id="toggle-login-pass" {% if portal_role != 'admin' %}disabled {% endif %}aria-label="Toggle password visibility">Show</button>
             </div>
           </label>
           <span id="login-password-error" class="field-error hidden" role="alert"></span>
-          <p id="login-password-hint" class="field-hint muted">Password unlocks after entering a valid corporate email.</p>
+          <p id="login-password-hint" class="field-hint muted">{% if portal_role == 'admin' %}Enter administrator credentials to authenticate.{% else %}Password unlocks after entering a valid corporate email.{% endif %}</p>
 
-          <button type="submit" id="login-submit-btn" class="btn btn-special full-width" disabled>
+          <button type="submit" id="login-submit-btn" class="btn btn-special full-width"{% if portal_role != 'admin' %} disabled{% endif %}>
             {% if portal_role == 'admin' %}Authenticate Admin Gateway{% else %}Sign In{% endif %}
           </button>
           <p id="login-error" class="error-text hidden" role="alert"></p>

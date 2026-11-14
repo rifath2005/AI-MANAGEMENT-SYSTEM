@@ -229,34 +229,29 @@ function updateLoginEmailGate(userTriggered = false) {
   if (!loginEmailInput || !loginPasswordInput) return;
   const raw = loginEmailInput.value;
   const trimmed = raw.trim();
-  const isValid = validateEmailFormat(trimmed);
+  const isValid = portalRole === "admin"
+    ? (validateEmailFormat(trimmed) || trimmed.length >= 3)
+    : validateEmailFormat(trimmed);
+
+  // Always keep password input and toggle accessible so user and password managers can type freely
+  loginPasswordInput.disabled = false;
+  if (toggleLoginPassBtn) toggleLoginPassBtn.disabled = false;
+  if (loginSubmitBtn) loginSubmitBtn.disabled = false;
 
   if (isValid) {
-    loginPasswordInput.disabled = false;
-    loginPasswordInput.placeholder = "Enter your password";
-    if (toggleLoginPassBtn) toggleLoginPassBtn.disabled = false;
     clearFieldError("login-email", "login-email-error");
     clearFieldError("login-username", "login-username-error");
-    if (loginPasswordHint) loginPasswordHint.textContent = "Email verified. Enter your password to continue.";
-    if (loginSubmitBtn) {
-      loginSubmitBtn.disabled = loginPasswordInput.value.length === 0;
-    }
-  } else {
-    loginPasswordInput.disabled = true;
-    loginPasswordInput.placeholder = "Enter valid email first";
-    if (toggleLoginPassBtn) toggleLoginPassBtn.disabled = true;
-    if (loginSubmitBtn) loginSubmitBtn.disabled = true;
-    if (loginPasswordHint) loginPasswordHint.textContent = "Password unlocks after entering a valid corporate email.";
-
-    if (trimmed.length > 0) {
-      setFieldError("login-email", "login-email-error", "Please enter a valid email address (e.g. name@company.com).");
+    if (loginPasswordHint) loginPasswordHint.textContent = "";
+  } else if (userTriggered && trimmed.length > 0) {
+    if (portalRole === "admin") {
+      setFieldError("login-email", "login-email-error", "Please enter a valid administrator email or username.");
     } else {
-      if (userTriggered) {
-        setFieldError("login-email", "login-email-error", "Corporate email is required.");
-      } else {
-        clearFieldError("login-email", "login-email-error");
-      }
+      setFieldError("login-email", "login-email-error", "Please enter a valid email address (e.g. name@company.com).");
     }
+  } else if (userTriggered && trimmed.length === 0) {
+    setFieldError("login-email", "login-email-error", portalRole === "admin" ? "Administrator email or username is required." : "Corporate email is required.");
+  } else {
+    clearFieldError("login-email", "login-email-error");
   }
 }
 
@@ -265,6 +260,12 @@ if (loginEmailInput) {
     normalizeEmailInput(loginEmailInput);
     updateLoginEmailGate(false);
     showEl(document.getElementById("login-error"), false);
+  });
+  loginEmailInput.addEventListener("change", () => {
+    updateLoginEmailGate(false);
+  });
+  loginEmailInput.addEventListener("paste", () => {
+    setTimeout(() => updateLoginEmailGate(false), 50);
   });
   loginEmailInput.addEventListener("blur", () => {
     loginEmailInput.value = loginEmailInput.value.trim().toLowerCase();
@@ -276,12 +277,11 @@ if (loginPasswordInput) {
   loginPasswordInput.addEventListener("input", () => {
     clearFieldError("login-password", "login-password-error");
     showEl(document.getElementById("login-error"), false);
-    const emailVal = loginEmailInput ? loginEmailInput.value.trim() : "";
-    if (loginSubmitBtn) {
-      loginSubmitBtn.disabled = !(validateEmailFormat(emailVal) && loginPasswordInput.value.length > 0);
-    }
   });
 }
+
+// Initial state check for login fields
+updateLoginEmailGate(false);
 
 // Setup email gate and password strength for Signup
 const signupEmailInput = document.getElementById("signup-email");
@@ -413,11 +413,15 @@ document.getElementById("login-form").addEventListener("submit", async (e) => {
   let firstInvalidEl = null;
 
   if (!email) {
-    setFieldError("login-email", "login-email-error", "Corporate email is required.");
+    setFieldError("login-email", "login-email-error", portalRole === "admin" ? "Administrator email or username is required." : "Corporate email is required.");
     hasError = true;
     firstInvalidEl = firstInvalidEl || emailInput;
-  } else if (!validateEmailFormat(email)) {
+  } else if (portalRole !== "admin" && !validateEmailFormat(email)) {
     setFieldError("login-email", "login-email-error", "Please enter a valid email address (e.g. name@company.com).");
+    hasError = true;
+    firstInvalidEl = firstInvalidEl || emailInput;
+  } else if (portalRole === "admin" && !validateEmailFormat(email) && email.length < 3) {
+    setFieldError("login-email", "login-email-error", "Please enter a valid administrator email or username.");
     hasError = true;
     firstInvalidEl = firstInvalidEl || emailInput;
   }
@@ -2315,6 +2319,8 @@ document.getElementById("user-pwd-form")?.addEventListener("submit", async (e) =
   } catch (err) {
     alert("Password reset failed: " + err.message);
   }
+});
+
 // User Self-Service Profile Modal Handlers
 async function openProfileModal() {
   try {
