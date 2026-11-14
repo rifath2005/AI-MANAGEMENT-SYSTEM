@@ -170,14 +170,16 @@ def list_audit_logs():
 def verify_audit_chain():
     """Verify SHA-256 hash chain integrity of audit_logs (FR-14)."""
     rows = get_db().execute("SELECT * FROM audit_logs ORDER BY id ASC").fetchall()
-    prev = "GENESIS"
+    if not rows:
+        return jsonify({"valid": True, "entries_verified": 0, "genesis_intact": True})
+    prev = rows[0]["prev_hash"]
     for r in rows:
         raw = f"{prev}|{r['created_at']}|{r['actor_id']}|{r['actor_username']}|{r['action']}|{r['entity_type']}|{r['entity_id']}|{r['details_json']}"
         expected = hashlib.sha256(raw.encode("utf-8")).hexdigest()
         if r["prev_hash"] != prev or r["entry_hash"] != expected:
             return jsonify({"valid": False, "broken_at_id": r["id"]}), 200
         prev = r["entry_hash"]
-    return jsonify({"valid": True, "entries_verified": len(rows)})
+    return jsonify({"valid": True, "entries_verified": len(rows), "genesis_intact": rows[0]["prev_hash"] == "GENESIS"})
 
 
 @analytics_bp.route("/analytics/role-dashboard", methods=["GET"])
