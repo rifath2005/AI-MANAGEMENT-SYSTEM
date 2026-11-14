@@ -386,6 +386,8 @@ document.querySelectorAll(".auth-mode-btn").forEach((btn) => {
     if (signupForm) showEl(signupForm, isSignup);
     clearAllFieldErrors(loginFields);
     showEl(document.getElementById("login-error"), false);
+    const succEl = document.getElementById("signup-success");
+    if (succEl) showEl(succEl, false);
     if (signupForm) {
       clearAllFieldErrors(signupFields);
       showEl(document.getElementById("signup-error"), false);
@@ -561,8 +563,10 @@ if (signupForm) {
     const originalBtnText = submitBtn ? submitBtn.textContent : "";
     if (submitBtn) {
       submitBtn.disabled = true;
-      submitBtn.textContent = "Creating Account...";
+      submitBtn.textContent = "Submitting Request...";
     }
+
+    const requestedRole = document.getElementById("signup-role")?.value || "requester";
 
     try {
       const res = await api("/api/auth/register", {
@@ -573,12 +577,20 @@ if (signupForm) {
           department: department,
           email: email,
           password: password,
+          role: requestedRole,
         }),
       });
-      state.token = res.token;
-      state.user = res.user;
-      localStorage.setItem("ams_token", res.token);
-      enterApp();
+      const succEl = document.getElementById("signup-success");
+      if (succEl) {
+        succEl.textContent = "✓ Access Request Submitted! Your corporate account has been queued for Administrator verification. You will be able to sign in once approved.";
+        showEl(succEl, true);
+      }
+      signupForm.reset();
+      clearAllFieldErrors(signupFields);
+      updateSignupEmailGate(false);
+      setTimeout(() => {
+        document.querySelector('.auth-mode-btn[data-mode="signin"]')?.click();
+      }, 4000);
     } catch (err) {
       errEl.textContent = err.message;
       showEl(errEl, true);
@@ -1851,12 +1863,13 @@ window.setWfTemplate = (type) => {
 
 // Admin Tools + Storage & Workflows
 async function loadAdminData() {
-  const [wfRes, polRes, usrRes, audRes, stoRes] = await Promise.all([
+  const [wfRes, polRes, usrRes, audRes, stoRes, accessReqRes] = await Promise.all([
     api("/api/workflows"),
     api("/api/policies"),
     api("/api/users"),
     api("/api/audit"),
     api("/api/storage/config"),
+    api("/api/admin/access-requests").catch(() => ({ requests: [] })),
   ]);
 
   document.getElementById("sb-url").value = stoRes.supabase_url || "";
@@ -1956,10 +1969,64 @@ async function loadAdminData() {
       `</div>`
     : '<p class="muted small">No policies configured.</p>';
 
-  // User Profiles & RBAC Grid
-  document.getElementById("users-list").innerHTML = usrRes.users.length
+  // Pending Access Requests Rendering
+  const pendingBox = document.getElementById("pending-access-box");
+  const pendingList = document.getElementById("pending-access-list");
+  const countBadge = document.getElementById("access-requests-count-badge");
+  const pendingRequests = accessReqRes?.requests || [];
+
+  if (pendingBox && pendingList) {
+    if (pendingRequests.length > 0) {
+      pendingBox.style.display = "block";
+      if (countBadge) countBadge.textContent = `${pendingRequests.length} Pending`;
+      pendingList.innerHTML = pendingRequests
+        .map((r) => {
+          const initials = getInitials(r.full_name);
+          const reqRole = r.requested_role || "requester";
+          return `
+            <div style="background:var(--card-bg, #ffffff);border:1px solid var(--border);border-left:4px solid #f59e0b;border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px;">
+              <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+                <div style="display:flex;align-items:center;gap:10px;">
+                  <div class="user-avatar-circle" style="background:#f59e0b;color:#fff;width:34px;height:34px;font-size:0.8rem;">${initials}</div>
+                  <div>
+                    <div style="font-weight:700;font-size:0.88rem;color:var(--ink);">${escapeHtml(r.full_name)} <span style="font-weight:400;color:var(--muted);font-size:0.8rem;">(@${escapeHtml(r.username)})</span></div>
+                    <div style="font-size:0.78rem;color:var(--muted);">${escapeHtml(r.email)} &bull; ${escapeHtml(r.department || "General")}</div>
+                  </div>
+                </div>
+                <div style="display:flex;align-items:center;gap:6px;font-size:0.78rem;">
+                  <span style="color:var(--muted);">Requested Role:</span>
+                  <span style="font-weight:700;color:#b45309;background:#fef3c7;padding:2px 7px;border-radius:4px;">${escapeHtml(reqRole)}</span>
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:4px;flex-wrap:wrap;padding-top:6px;border-top:1px dashed var(--border-soft);">
+                <label style="font-size:0.75rem;margin:0;display:flex;align-items:center;gap:6px;">
+                  <span>Grant Role:</span>
+                  <select id="access-role-${r.id}" style="padding:3px 8px;font-size:0.75rem;border-radius:6px;border:1px solid var(--border);">
+                    <option value="requester" ${reqRole === 'requester' ? 'selected' : ''}>Requester</option>
+                    <option value="manager" ${reqRole === 'manager' ? 'selected' : ''}>Manager</option>
+                    <option value="approver" ${reqRole === 'approver' ? 'selected' : ''}>Finance Approver</option>
+                    <option value="hr" ${reqRole === 'hr' ? 'selected' : ''}>HR</option>
+                  </select>
+                </label>
+                <button class="btn btn-special btn-sm" style="font-size:0.75rem;padding:3px 10px;" onclick="approveAccessRequest(${r.id})">✓ Approve &amp; Activate</button>
+                <button class="btn btn-secondary btn-sm" style="font-size:0.75rem;padding:3px 10px;color:var(--accent-red);" onclick="rejectAccessRequest(${r.id})">✕ Decline</button>
+              </div>
+            </div>
+          `;
+        })
+        .join("");
+    } else {
+      pendingBox.style.display = "none";
+      if (countBadge) countBadge.textContent = "0";
+      pendingList.innerHTML = "";
+    }
+  }
+
+  // User Profiles & RBAC Grid (active/deactivated users, excluding unreviewed access requests)
+  const activeUsers = (usrRes.users || []).filter((u) => u.status !== "pending_approval");
+  document.getElementById("users-list").innerHTML = activeUsers.length
     ? `<div class="user-profiles-grid">` +
-      usrRes.users
+      activeUsers
         .map((u) => {
           const initials = getInitials(u.full_name);
           const bg = roleAvatarGradients[u.role] || roleAvatarGradients.requester;
@@ -2320,6 +2387,37 @@ document.getElementById("user-pwd-form")?.addEventListener("submit", async (e) =
     alert("Password reset failed: " + err.message);
   }
 });
+
+// Admin User Access Requests Decision Handlers
+window.approveAccessRequest = async (userId) => {
+  const roleSelect = document.getElementById(`access-role-${userId}`);
+  const role = roleSelect ? roleSelect.value : "requester";
+  try {
+    const res = await api(`/api/admin/access-requests/${userId}/decision`, {
+      method: "POST",
+      body: JSON.stringify({ decision: "approve", role }),
+    });
+    alert(res.message || "User access granted and activated!");
+    loadAdminData();
+  } catch (err) {
+    alert("Approval failed: " + err.message);
+  }
+};
+
+window.rejectAccessRequest = async (userId) => {
+  const reason = prompt("Enter a decline reason (optional):", "Corporate access request declined.");
+  if (reason === null) return;
+  try {
+    const res = await api(`/api/admin/access-requests/${userId}/decision`, {
+      method: "POST",
+      body: JSON.stringify({ decision: "reject", rejection_reason: reason }),
+    });
+    alert(res.message || "Access request declined.");
+    loadAdminData();
+  } catch (err) {
+    alert("Decline failed: " + err.message);
+  }
+};
 
 // User Self-Service Profile Modal Handlers
 async function openProfileModal() {

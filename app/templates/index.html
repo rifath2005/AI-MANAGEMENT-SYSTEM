@@ -92,7 +92,7 @@
         {% if portal_role in ('staff', 'requester') %}
           <div class="auth-mode-switch" id="auth-mode-switch">
             <button type="button" class="auth-mode-btn active" data-mode="signin">Sign In</button>
-            <button type="button" class="auth-mode-btn" data-mode="signup">Create Account</button>
+            <button type="button" class="auth-mode-btn" data-mode="signup">Request Access</button>
           </div>
         {% endif %}
 
@@ -120,8 +120,14 @@
         </form>
 
         {% if portal_role in ('staff', 'requester') %}
-          {# Self-Service Sign-Up Form (Requester Role Only; excluded from restricted admin gateway) #}
+          {# Self-Service Access Request Form (Requires Admin Approval) #}
           <form id="signup-form" class="hidden" autocomplete="on" novalidate>
+            <div style="background:var(--sage-soft);border:1px solid var(--border-soft);border-radius:8px;padding:10px 12px;margin-bottom:12px;">
+              <p style="margin:0;font-size:0.82rem;color:var(--ink);line-height:1.4;">
+                <strong>Corporate Access Request:</strong> Submit your details below. An administrator will review and activate your account before you can sign in.
+              </p>
+            </div>
+
             <label for="signup-fullname">Full Name <span class="req-star" title="Required">*</span>
               <input type="text" id="signup-fullname" placeholder="e.g. Priya Sharma" required aria-required="true" aria-describedby="signup-fullname-error" />
             </label>
@@ -141,6 +147,15 @@
                 <span id="signup-dept-error" class="field-error hidden" role="alert"></span>
               </div>
             </div>
+
+            <label for="signup-role">Requested Role
+              <select id="signup-role">
+                <option value="requester" selected>Requester (Standard Staff)</option>
+                <option value="manager">Manager (Team Reviewer)</option>
+                <option value="approver">Approver (Finance Officer)</option>
+                <option value="hr">HR (People Operations)</option>
+              </select>
+            </label>
 
             <label for="signup-email">Corporate Email <span class="req-star" title="Required">*</span>
               <input type="email" id="signup-email" placeholder="priya.sharma@company.com" required aria-required="true" aria-describedby="signup-email-error" />
@@ -189,8 +204,9 @@
               </ul>
             </div>
 
-            <button type="submit" id="signup-submit-btn" class="btn btn-special full-width" disabled>Create Requester Account</button>
+            <button type="submit" id="signup-submit-btn" class="btn btn-special full-width" disabled>Submit Access Request</button>
             <p id="signup-error" class="error-text hidden" role="alert"></p>
+            <p id="signup-success" class="hidden" style="margin-top:12px;background:#e6f4ea;border:1px solid #34a853;color:#137333;padding:12px 14px;border-radius:8px;font-size:0.86rem;line-height:1.4;" role="status"></p>
           </form>
         {% endif %}
       </div>
@@ -474,6 +490,19 @@
 
           <div class="card">
             <h3>User Profiles &amp; RBAC</h3>
+
+            <!-- Pending User Access Requests Section -->
+            <div id="pending-access-box" style="margin-bottom:18px;display:none;">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                <h4 style="margin:0;color:var(--ink);display:flex;align-items:center;gap:8px;font-size:0.92rem;">
+                  <span>Pending Access Requests</span>
+                  <span id="access-requests-count-badge" style="font-size:0.75rem;padding:2px 8px;border-radius:9999px;background:#fef3c7;color:#b45309;font-weight:700;">0</span>
+                </h4>
+              </div>
+              <div id="pending-access-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+              <hr style="margin:16px 0;border:0;border-top:1px solid var(--border);" />
+            </div>
+
             <div id="users-list"></div>
             <hr style="margin:18px 0;border:0;border-top:1px solid var(--border);" />
             <h4 style="margin-top:0;">Provision New User</h4>

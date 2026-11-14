@@ -33,6 +33,8 @@ def _user_payload(user) -> dict:
         "email": user["email"],
         "role": user["role"],
         "department": user["department"],
+        "status": user["status"] if "status" in user.keys() else "active",
+        "requested_role": user["requested_role"] if "requested_role" in user.keys() else user["role"],
         "capabilities": ROLE_CAPABILITIES.get(user["role"], []),
     }
 
@@ -74,6 +76,12 @@ def login():
 
     if user and not user["is_active"]:
         login_rate_limiter.record_failure(rate_key)
+        u_status = user["status"] if "status" in user.keys() else "deactivated"
+        if u_status == "pending_approval":
+            return jsonify({"error": "Your corporate access request is currently pending Administrator review. You will be able to sign in once an administrator approves your access."}), 403
+        if u_status == "rejected":
+            reason = user["rejection_reason"] if "rejection_reason" in user.keys() and user["rejection_reason"] else "Not approved by administrator."
+            return jsonify({"error": f"Your access request was rejected: {reason}"}), 403
         return jsonify({"error": "This account is deactivated. Please contact your administrator."}), 403
 
     if not user or not verify_password(password, user["password_hash"]):
@@ -146,14 +154,18 @@ def admin_login():
 
 
 @auth_bp.route("/auth/register", methods=["POST"])
+@auth_bp.route("/auth/request-access", methods=["POST"])
 def register_requester():
-    """Self-service sign-up strictly creating standard 'requester' accounts."""
+    """Submit a corporate user access request for administrator review and approval."""
     data = request.get_json(silent=True) or {}
     username = (data.get("username") or "").strip()
     password = data.get("password") or ""
     full_name = (data.get("full_name") or "").strip()
     email = (data.get("email") or "").strip().lower()
     department = (data.get("department") or "General").strip()
+    requested_role = (data.get("role") or data.get("requested_role") or "requester").strip().lower()
+    if requested_role not in ("requester", "manager", "approver", "hr"):
+        requested_role = "requester"
 
     if not username or not password or not full_name or not email:
         return jsonify({"error": "username, password, full_name, and email are required"}), 400
@@ -170,20 +182,133 @@ def register_requester():
     now = utcnow_iso()
     cur = db.execute(
         """
-        INSERT INTO users (username, password_hash, full_name, email, role, department, is_active, created_at)
-        VALUES (?, ?, ?, ?, 'requester', ?, 1, ?)
+        INSERT INTO users (username, password_hash, full_name, email, role, department, is_active, status, requested_role, created_at)
+        VALUES (?, ?, ?, ?, 'requester', ?, 0, 'pending_approval', ?, ?)
         """,
-        (username, hash_password(password), full_name, email, department, now),
+        (username, hash_password(password), full_name, email, department, requested_role, now),
     )
     uid = cur.lastrowid
     append_audit_log(
-        db, uid, username, "REQUESTER_SELF_SIGNUP", "user", uid,
-        {"department": department}, now,
+        db, uid, username, "USER_ACCESS_REQUESTED", "user", uid,
+        {"department": department, "requested_role": requested_role, "email": email}, now,
     )
+    # Alert administrators about pending user access request
+    admins = db.execute("SELECT id FROM users WHERE role = 'admin' AND is_active = 1").fetchall()
+    for adm in admins:
+        db.execute(
+            """
+            INSERT INTO notifications (user_id, request_id, category, title, message, is_read, created_at)
+            VALUES (?, NULL, 'access_request', 'New User Access Request', ?, 0, ?)
+            """,
+            (
+                adm["id"],
+                f"User {full_name} (@{username}, {email}) requested {requested_role.title()} access for {department}.",
+                now,
+            ),
+        )
     db.commit()
     user = db.execute("SELECT * FROM users WHERE id = ?", (uid,)).fetchone()
-    token = create_token(user["id"], user["username"], user["role"])
-    return jsonify({"token": token, "user": _user_payload(user)}), 201
+    return jsonify({
+        "message": "Your corporate access request has been submitted to the Administrator for approval. You will receive an email once your account is active.",
+        "status": "pending_approval",
+        "user": _user_payload(user),
+    }), 201
+
+
+@auth_bp.route("/admin/access-requests", methods=["GET"])
+@require_roles("admin", "hr")
+def list_access_requests():
+    """List pending user access requests awaiting administrator review."""
+    db = get_db()
+    rows = db.execute(
+        """
+        SELECT id, username, full_name, email, role, department, status, requested_role, created_at
+        FROM users
+        WHERE status = 'pending_approval' OR (is_active = 0 AND status != 'rejected' AND role != 'admin')
+        ORDER BY id DESC
+        """
+    ).fetchall()
+    return jsonify({"requests": [dict(r) for r in rows]})
+
+
+@auth_bp.route("/admin/access-requests/<int:user_id>/decision", methods=["POST"])
+@require_roles("admin", "hr")
+def decide_access_request(user_id: int):
+    """Approve or reject a user access request."""
+    data = request.get_json(silent=True) or {}
+    decision = (data.get("decision") or "").strip().lower()
+    if decision not in ("approve", "reject"):
+        return jsonify({"error": "decision must be 'approve' or 'reject'"}), 400
+
+    db = get_db()
+    target = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not target:
+        return jsonify({"error": "User access request not found"}), 404
+
+    now = utcnow_iso()
+    admin_id = g.current_user["id"]
+    admin_uname = g.current_user["username"]
+
+    if decision == "approve":
+        assigned_role = (data.get("role") or target["requested_role"] or "requester").strip().lower()
+        if assigned_role not in VALID_ROLES:
+            assigned_role = "requester"
+        if g.current_user["role"] == "hr" and assigned_role == "admin":
+            return jsonify({"error": "HR cannot grant administrator access"}), 403
+
+        assigned_dept = (data.get("department") or target["department"] or "General").strip()
+        db.execute(
+            """
+            UPDATE users
+            SET is_active = 1, status = 'active', role = ?, department = ?, reviewed_by = ?, reviewed_at = ?
+            WHERE id = ?
+            """,
+            (assigned_role, assigned_dept, admin_id, now, user_id),
+        )
+        append_audit_log(
+            db, admin_id, admin_uname, "USER_ACCESS_APPROVED", "user", user_id,
+            {"assigned_role": assigned_role, "department": assigned_dept, "target_username": target["username"]},
+            now,
+        )
+        db.execute(
+            """
+            INSERT INTO notifications (user_id, request_id, category, title, message, is_read, created_at)
+            VALUES (?, NULL, 'access_granted', 'System Access Approved', ?, 0, ?)
+            """,
+            (
+                user_id,
+                f"Your access request has been approved! You have been granted '{assigned_role.title()}' access for {assigned_dept}.",
+                now,
+            ),
+        )
+        db.commit()
+        return jsonify({
+            "message": f"Access granted for @{target['username']} with role '{assigned_role}'.",
+            "user_id": user_id,
+            "status": "active",
+            "role": assigned_role,
+        })
+    else:
+        reason = (data.get("rejection_reason") or "Access request declined by administrator.").strip()
+        db.execute(
+            """
+            UPDATE users
+            SET is_active = 0, status = 'rejected', rejection_reason = ?, reviewed_by = ?, reviewed_at = ?
+            WHERE id = ?
+            """,
+            (reason, admin_id, now, user_id),
+        )
+        append_audit_log(
+            db, admin_id, admin_uname, "USER_ACCESS_REJECTED", "user", user_id,
+            {"reason": reason, "target_username": target["username"]},
+            now,
+        )
+        db.commit()
+        return jsonify({
+            "message": f"Access request for @{target['username']} has been rejected.",
+            "user_id": user_id,
+            "status": "rejected",
+        })
 
 
 @auth_bp.route("/auth/me", methods=["GET"])
@@ -257,7 +382,7 @@ def update_own_profile():
 def list_users():
     db = get_db()
     rows = db.execute(
-        "SELECT id, username, full_name, email, role, department, is_active, created_at FROM users ORDER BY id ASC"
+        "SELECT id, username, full_name, email, role, department, status, requested_role, is_active, created_at FROM users ORDER BY id ASC"
     ).fetchall()
     return jsonify({"users": [dict(r) for r in rows]})
 

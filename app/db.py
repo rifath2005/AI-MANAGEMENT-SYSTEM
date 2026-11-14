@@ -20,6 +20,11 @@ CREATE TABLE IF NOT EXISTS users (
     email TEXT NOT NULL,
     role TEXT NOT NULL CHECK(role IN ('requester', 'manager', 'approver', 'hr', 'admin')),
     department TEXT NOT NULL DEFAULT 'General',
+    status TEXT NOT NULL DEFAULT 'active',
+    requested_role TEXT DEFAULT 'requester',
+    rejection_reason TEXT,
+    reviewed_by INTEGER,
+    reviewed_at TEXT,
     is_active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL
 );
@@ -267,6 +272,18 @@ def init_db(seed: bool = True):
     email_cols = {r["name"] for r in db.execute("PRAGMA table_info(email_dispatches)").fetchall()}
     if "delivery_status" not in email_cols:
         db.execute("ALTER TABLE email_dispatches ADD COLUMN delivery_status TEXT NOT NULL DEFAULT 'simulated'")
+
+    user_cols = {r["name"] for r in db.execute("PRAGMA table_info(users)").fetchall()}
+    if "status" not in user_cols:
+        db.execute("ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
+    if "requested_role" not in user_cols:
+        db.execute("ALTER TABLE users ADD COLUMN requested_role TEXT DEFAULT 'requester'")
+    if "rejection_reason" not in user_cols:
+        db.execute("ALTER TABLE users ADD COLUMN rejection_reason TEXT")
+    if "reviewed_by" not in user_cols:
+        db.execute("ALTER TABLE users ADD COLUMN reviewed_by INTEGER")
+    if "reviewed_at" not in user_cols:
+        db.execute("ALTER TABLE users ADD COLUMN reviewed_at TEXT")
 
     if seed:
         existing_users = db.execute("SELECT COUNT(*) AS c FROM users").fetchone()["c"]

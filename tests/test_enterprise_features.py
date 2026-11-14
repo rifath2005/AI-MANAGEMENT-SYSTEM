@@ -347,3 +347,103 @@ def test_volume_forecast_series(client):
     assert "forecast_series" in vf
     assert len(vf["forecast_series"]) == 7
     assert "count" in vf["forecast_series"][0]
+
+
+def test_user_access_request_flow_pending_gating_and_approval(client):
+    """Verify that employee access requests require admin dashboard approval before login."""
+    # 1. Employee submits access request
+    reg = client.post(
+        "/api/auth/request-access",
+        json={
+            "full_name": "Arjun Patel",
+            "username": "arjun.patel",
+            "email": "arjun.patel@company.com",
+            "department": "Engineering",
+            "role": "manager",
+            "password": "SecureAccess#2026",
+        },
+    )
+    assert reg.status_code == 201
+    assert reg.get_json()["status"] == "pending_approval"
+    user_id = reg.get_json()["user"]["id"]
+
+    # 2. User cannot log in while pending
+    login_attempt = client.post(
+        "/api/auth/login",
+        json={"username": "arjun.patel", "password": "SecureAccess#2026"},
+    )
+    assert login_attempt.status_code == 403
+    assert "pending" in login_attempt.get_json()["error"].lower()
+
+    # 3. Admin views pending access requests
+    admin_login = client.post(
+        "/api/auth/admin/login",
+        json={"username": "sysadmin", "password": "AdminGate#2026"},
+    )
+    assert admin_login.status_code == 200
+    admin_hdr = {"Authorization": f"Bearer {admin_login.get_json()['token']}"}
+
+    pending_list = client.get("/api/admin/access-requests", headers=admin_hdr)
+    assert pending_list.status_code == 200
+    requests = pending_list.get_json()["requests"]
+    assert any(r["id"] == user_id and r["username"] == "arjun.patel" for r in requests)
+
+    # 4. Admin approves access request and grants manager role
+    decision = client.post(
+        f"/api/admin/access-requests/{user_id}/decision",
+        headers=admin_hdr,
+        json={"decision": "approve", "role": "manager"},
+    )
+    assert decision.status_code == 200
+    assert decision.get_json()["status"] == "active"
+    assert decision.get_json()["role"] == "manager"
+
+    # 5. User can now successfully log in with assigned role
+    user_login = client.post(
+        "/api/auth/login",
+        json={"username": "arjun.patel", "password": "SecureAccess#2026"},
+    )
+    assert user_login.status_code == 200
+    assert user_login.get_json()["user"]["role"] == "manager"
+    assert "token" in user_login.get_json()
+
+
+def test_user_access_request_rejection_flow(client):
+    """Verify that rejected access requests remain blocked with rejection reason."""
+    # 1. Submit request
+    reg = client.post(
+        "/api/auth/request-access",
+        json={
+            "full_name": "Spam User",
+            "username": "spam.user",
+            "email": "spam.user@external.com",
+            "department": "Unknown",
+            "password": "SecureAccess#2026",
+        },
+    )
+    assert reg.status_code == 201
+    user_id = reg.get_json()["user"]["id"]
+
+    # 2. Admin declines request
+    admin_login = client.post(
+        "/api/auth/admin/login",
+        json={"username": "sysadmin", "password": "AdminGate#2026"},
+    )
+    admin_hdr = {"Authorization": f"Bearer {admin_login.get_json()['token']}"}
+
+    declined = client.post(
+        f"/api/admin/access-requests/{user_id}/decision",
+        headers=admin_hdr,
+        json={"decision": "reject", "rejection_reason": "External email domain not allowed."},
+    )
+    assert declined.status_code == 200
+    assert declined.get_json()["status"] == "rejected"
+
+    # 3. User attempts to log in and gets rejection reason
+    login_attempt = client.post(
+        "/api/auth/login",
+        json={"username": "spam.user", "password": "SecureAccess#2026"},
+    )
+    assert login_attempt.status_code == 403
+    assert "rejected" in login_attempt.get_json()["error"].lower()
+    assert "External email domain not allowed" in login_attempt.get_json()["error"]
