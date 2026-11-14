@@ -153,6 +153,7 @@ CREATE TABLE IF NOT EXISTS email_dispatches (
     body TEXT NOT NULL,
     category TEXT NOT NULL,
     request_id INTEGER REFERENCES requests(id) ON DELETE SET NULL,
+    delivery_status TEXT NOT NULL DEFAULT 'simulated',
     created_at TEXT NOT NULL
 );
 
@@ -262,6 +263,10 @@ def init_db(seed: bool = True):
     task_cols = {r["name"] for r in db.execute("PRAGMA table_info(approval_tasks)").fetchall()}
     if "is_escalated" not in task_cols:
         db.execute("ALTER TABLE approval_tasks ADD COLUMN is_escalated INTEGER NOT NULL DEFAULT 0")
+
+    email_cols = {r["name"] for r in db.execute("PRAGMA table_info(email_dispatches)").fetchall()}
+    if "delivery_status" not in email_cols:
+        db.execute("ALTER TABLE email_dispatches ADD COLUMN delivery_status TEXT NOT NULL DEFAULT 'simulated'")
 
     if seed:
         existing_users = db.execute("SELECT COUNT(*) AS c FROM users").fetchone()["c"]

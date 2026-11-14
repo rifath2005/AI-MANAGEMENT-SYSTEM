@@ -884,8 +884,79 @@ async function loadDashboard() {
   if (isApprover) {
     const pred = await api("/api/analytics/predictions");
     const vf = pred.volume_forecast;
+
+    const histData = vf.daily_series || [];
+    const predData = vf.forecast_series || [];
+    const allCounts = [...histData.map((d) => d.count), ...predData.map((d) => d.count), 5];
+    const maxVal = Math.max(...allCounts);
+    const trendIcon = vf.trend === "increasing" ? "↗ Trending Up" : vf.trend === "decreasing" ? "↘ Trending Down" : "→ Stable Demand";
+    const trendColor = vf.trend === "increasing" ? "#059669" : vf.trend === "decreasing" ? "#2563EB" : "var(--muted)";
+
+    const chartW = 340;
+    const chartH = 75;
+    const totalPoints = Math.max(histData.length + predData.length, 2);
+    const step = chartW / Math.max(totalPoints - 1, 1);
+
+    let histPath = "";
+    histData.forEach((d, i) => {
+      const x = i * step;
+      const y = chartH - (d.count / maxVal) * (chartH - 16) - 8;
+      histPath += `${i === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)} `;
+    });
+
+    let predPath = "";
+    if (histData.length && predData.length) {
+      const lastHistX = (histData.length - 1) * step;
+      const lastHistY = chartH - (histData[histData.length - 1].count / maxVal) * (chartH - 16) - 8;
+      predPath = `M ${lastHistX.toFixed(1)} ${lastHistY.toFixed(1)} `;
+    }
+    predData.forEach((d, i) => {
+      const x = (histData.length + i) * step;
+      const y = chartH - (d.count / maxVal) * (chartH - 16) - 8;
+      predPath += `${predPath ? "L" : "M"} ${x.toFixed(1)} ${y.toFixed(1)} `;
+    });
+
+    const svgChart = `
+      <div style="background:var(--bg-subtle);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:4px;">
+          <div>
+            <span style="font-weight:700;font-size:0.88rem;">AI Volume &amp; Workflow Trend Forecast</span>
+            <div class="muted small">~${vf.predicted_next_7_days_requests} requests next 7 days &bull; ~${vf.predicted_next_30_days_requests} next 30 days</div>
+          </div>
+          <span style="font-size:0.75rem;padding:3px 8px;border-radius:9999px;background:var(--card-bg);border:1px solid var(--border);font-weight:700;color:${trendColor};">
+            ${trendIcon}
+          </span>
+        </div>
+        <div style="overflow-x:auto;">
+          <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:75px;display:block;overflow:visible;">
+            <line x1="0" y1="${chartH - 2}" x2="${chartW}" y2="${chartH - 2}" stroke="var(--border)" stroke-width="1" />
+            ${histPath ? `<path d="${histPath}" fill="none" stroke="var(--primary)" stroke-width="2.5" stroke-linecap="round" />` : ""}
+            ${predPath ? `<path d="${predPath}" fill="none" stroke="#059669" stroke-width="2.5" stroke-dasharray="4 3" stroke-linecap="round" />` : ""}
+            ${histData
+              .map((d, i) => {
+                const x = i * step;
+                const y = chartH - (d.count / maxVal) * (chartH - 16) - 8;
+                return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3" fill="var(--primary)" title="${escapeHtml(d.date)}: ${d.count} requests" />`;
+              })
+              .join("")}
+            ${predData
+              .map((d, i) => {
+                const x = (histData.length + i) * step;
+                const y = chartH - (d.count / maxVal) * (chartH - 16) - 8;
+                return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.5" fill="#059669" stroke="var(--card-bg)" stroke-width="1.5" title="${escapeHtml(d.date)} (predicted): ${d.count} requests" />`;
+              })
+              .join("")}
+          </svg>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:0.72rem;color:var(--muted);flex-wrap:wrap;gap:4px;">
+          <span>● Historical observed volume</span>
+          <span>--○-- AI Linear Forecast (next 7 days)</span>
+        </div>
+      </div>
+    `;
+
     document.getElementById("predictions-panel").innerHTML = `
-      <p><strong>Forecast:</strong> ~${vf.predicted_next_7_days_requests} requests in 7 days (~${vf.predicted_next_30_days_requests} in 30 days) • Trend: <strong>${vf.trend}</strong></p>
+      ${svgChart}
       ${
         pred.bottlenecks.length
           ? pred.bottlenecks
@@ -977,9 +1048,79 @@ window.applyDynamicRule = async (policyId) => {
 // Requests Table & Detail Modal
 let cachedRequests = [];
 
+function updateBulkBar() {
+  const checked = [...document.querySelectorAll(".bulk-row-check:checked")];
+  const bar = document.getElementById("bulk-actions-bar");
+  const countEl = document.getElementById("bulk-selected-count");
+  if (!bar) return;
+  if (checked.length > 0) {
+    showEl(bar, true);
+    if (countEl) countEl.textContent = `${checked.length} request(s) selected`;
+  } else {
+    showEl(bar, false);
+    const selectAll = document.getElementById("bulk-select-all");
+    if (selectAll) selectAll.checked = false;
+  }
+}
+
+document.getElementById("bulk-select-all")?.addEventListener("change", (e) => {
+  const isChecked = e.target.checked;
+  document.querySelectorAll(".bulk-row-check:not(:disabled)").forEach((cb) => {
+    cb.checked = isChecked;
+  });
+  updateBulkBar();
+});
+
+document.getElementById("bulk-clear-btn")?.addEventListener("click", () => {
+  document.querySelectorAll(".bulk-row-check").forEach((cb) => (cb.checked = false));
+  updateBulkBar();
+});
+
+document.getElementById("bulk-approve-btn")?.addEventListener("click", async () => {
+  const ids = [...document.querySelectorAll(".bulk-row-check:checked")].map((cb) => parseInt(cb.dataset.id, 10));
+  if (!ids.length) return alert("No requests selected.");
+  if (!confirm(`Batch approve ${ids.length} selected request(s)?`)) return;
+  try {
+    const res = await api("/api/requests/bulk-decision", {
+      method: "POST",
+      body: JSON.stringify({ request_ids: ids, decision: "approved" }),
+    });
+    alert(`Bulk approval complete: ${res.processed_count} approved successfully.`);
+    document.querySelectorAll(".bulk-row-check").forEach((cb) => (cb.checked = false));
+    updateBulkBar();
+    loadRequests();
+    loadDashboard();
+    loadNotifications();
+  } catch (err) {
+    alert("Bulk approval failed: " + err.message);
+  }
+});
+
+document.getElementById("bulk-reject-btn")?.addEventListener("click", async () => {
+  const ids = [...document.querySelectorAll(".bulk-row-check:checked")].map((cb) => parseInt(cb.dataset.id, 10));
+  if (!ids.length) return alert("No requests selected.");
+  const reason = prompt("Enter standardized rejection reason (e.g. POLICY_VIOLATION, MISSING_DOCS, BUDGET_EXCEEDED):", "POLICY_VIOLATION");
+  if (!reason) return;
+  try {
+    const res = await api("/api/requests/bulk-decision", {
+      method: "POST",
+      body: JSON.stringify({ request_ids: ids, decision: "rejected", rejection_reason: reason.trim() }),
+    });
+    alert(`Bulk rejection complete: ${res.processed_count} rejected.`);
+    document.querySelectorAll(".bulk-row-check").forEach((cb) => (cb.checked = false));
+    updateBulkBar();
+    loadRequests();
+    loadDashboard();
+    loadNotifications();
+  } catch (err) {
+    alert("Bulk rejection failed: " + err.message);
+  }
+});
+
 function renderRequestsTable() {
   const tbody = document.getElementById("requests-tbody");
   if (!tbody) return;
+  const isApprover = state.user && ["manager", "approver", "hr", "admin"].includes(state.user.role);
   const searchVal = (document.getElementById("filter-search")?.value || "").toLowerCase().trim();
   let list = cachedRequests;
   if (searchVal) {
@@ -1006,8 +1147,13 @@ function renderRequestsTable() {
             } else if (r.auto_approved) {
               statusBadge += ' <span class="small muted">(Auto)</span>';
             }
+            const canBatch = isApprover && r.status === "in_review";
+            const checkCol = isApprover
+              ? `<td style="width:36px;"><input type="checkbox" class="bulk-row-check" data-id="${r.id}" ${canBatch ? "" : "disabled style='opacity:0.25;'"} /></td>`
+              : "";
             return `
     <tr>
+      ${checkCol}
       <td>#${r.id}</td>
       <td><strong>${escapeHtml(r.title)}</strong><div class="muted small">${humanizeType(r.request_type)}</div></td>
       <td>${escapeHtml(r.requester_name)}</td>
@@ -1019,7 +1165,12 @@ function renderRequestsTable() {
           }
         )
         .join("")
-    : '<tr><td colspan="7" class="muted small" style="text-align:center;padding:26px;">No requests found matching current filter.</td></tr>';
+    : `<tr><td colspan="${isApprover ? 8 : 7}" class="muted small" style="text-align:center;padding:26px;">No requests found matching current filter.</td></tr>`;
+
+  document.querySelectorAll(".bulk-row-check").forEach((cb) => {
+    cb.addEventListener("change", updateBulkBar);
+  });
+  updateBulkBar();
 }
 
 document.getElementById("refresh-requests-btn").addEventListener("click", loadRequests);
@@ -1420,8 +1571,10 @@ document.getElementById("request-form").addEventListener("submit", async (e) => 
   fd.append("urgency", document.getElementById("req-urgency").value);
   fd.append("description", document.getElementById("req-description").value);
   const fileInput = document.getElementById("req-attachment");
-  if (fileInput.files.length > 0) {
-    fd.append("attachment", fileInput.files[0]);
+  if (fileInput && fileInput.files.length > 0) {
+    for (let i = 0; i < fileInput.files.length; i++) {
+      fd.append("attachment", fileInput.files[i]);
+    }
   }
   try {
     const res = await api("/api/requests", { method: "POST", body: fd });
@@ -1450,7 +1603,9 @@ document.getElementById("save-draft-btn")?.addEventListener("click", async () =>
   fd.append("is_draft", "true");
   const fileInput = document.getElementById("req-attachment");
   if (fileInput && fileInput.files.length > 0) {
-    fd.append("attachment", fileInput.files[0]);
+    for (let i = 0; i < fileInput.files.length; i++) {
+      fd.append("attachment", fileInput.files[i]);
+    }
   }
   try {
     const res = await api("/api/requests", { method: "POST", body: fd });
@@ -2159,6 +2314,92 @@ document.getElementById("user-pwd-form")?.addEventListener("submit", async (e) =
     alert("User password successfully reset and logged to audit trail.");
   } catch (err) {
     alert("Password reset failed: " + err.message);
+  }
+// User Self-Service Profile Modal Handlers
+async function openProfileModal() {
+  try {
+    const res = await api("/api/auth/me");
+    const u = res.user;
+    state.user = u;
+    const initials = getInitials(u.full_name);
+    const bg = roleAvatarGradients[u.role] || roleAvatarGradients.requester;
+
+    const av = document.getElementById("profile-avatar");
+    if (av) {
+      av.textContent = initials;
+      av.style.background = bg;
+    }
+    const fn = document.getElementById("profile-fullname");
+    if (fn) fn.textContent = u.full_name;
+    const un = document.getElementById("profile-username");
+    if (un) un.textContent = `@${u.username}`;
+    const dp = document.getElementById("profile-dept");
+    if (dp) dp.textContent = u.department || "Organization";
+    const rb = document.getElementById("profile-role-badge");
+    if (rb) {
+      rb.textContent = u.role;
+      rb.className = `user-role-badge role-badge-${u.role}`;
+    }
+
+    const st = u.stats || {};
+    const stTot = document.getElementById("profile-stat-total");
+    if (stTot) stTot.textContent = st.total_submitted || 0;
+    const stApp = document.getElementById("profile-stat-approved");
+    if (stApp) stApp.textContent = st.approved_count || 0;
+    const stPen = document.getElementById("profile-stat-pending");
+    if (stPen) stPen.textContent = st.pending_count || 0;
+
+    const ifn = document.getElementById("profile-input-fullname");
+    if (ifn) ifn.value = u.full_name || "";
+    const iem = document.getElementById("profile-input-email");
+    if (iem) iem.value = u.email || "";
+    const cpwd = document.getElementById("profile-current-pwd");
+    if (cpwd) cpwd.value = "";
+    const npwd = document.getElementById("profile-new-pwd");
+    if (npwd) npwd.value = "";
+
+    showEl(document.getElementById("profile-modal"), true);
+  } catch (err) {
+    alert("Failed to load profile: " + err.message);
+  }
+}
+
+document.getElementById("user-profile-pill")?.addEventListener("click", openProfileModal);
+
+document.getElementById("profile-modal-close-btn")?.addEventListener("click", () => {
+  showEl(document.getElementById("profile-modal"), false);
+});
+
+document.getElementById("profile-cancel-btn")?.addEventListener("click", () => {
+  showEl(document.getElementById("profile-modal"), false);
+});
+
+document.getElementById("profile-form")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const full_name = document.getElementById("profile-input-fullname").value.trim();
+  const email = document.getElementById("profile-input-email").value.trim();
+  const current_password = document.getElementById("profile-current-pwd").value;
+  const new_password = document.getElementById("profile-new-pwd").value;
+
+  const payload = { full_name, email };
+  if (new_password) {
+    if (!current_password) return alert("Please enter your current password to set a new password.");
+    payload.current_password = current_password;
+    payload.new_password = new_password;
+  }
+
+  try {
+    const res = await api("/api/auth/profile", {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+    state.user.full_name = res.user.full_name;
+    state.user.email = res.user.email;
+    document.getElementById("user-display-name").textContent = res.user.full_name;
+    showEl(document.getElementById("profile-modal"), false);
+    alert("Profile updated successfully!");
+  } catch (err) {
+    alert("Failed to update profile: " + err.message);
   }
 });
 

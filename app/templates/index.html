@@ -224,7 +224,7 @@
         <button id="notif-toggle-btn" class="btn btn-secondary btn-sm">
           Alerts <span id="notif-badge" class="badge">0</span>
         </button>
-        <div class="user-pill">
+        <div class="user-pill" id="user-profile-pill" style="cursor:pointer;" title="Click to view and edit my profile">
           <span id="user-display-name">User</span>
           <span id="user-role-badge" class="role-tag">role</span>
         </div>
@@ -296,10 +296,23 @@
             <button id="export-accounting-csv-btn" class="btn btn-secondary btn-sm approver-only hidden" title="Export filtered accounting report">📥 Export CSV</button>
           </div>
         </div>
+        <!-- Bulk Actions Floating Bar for Approvers -->
+        <div id="bulk-actions-bar" class="bulk-actions-bar hidden approver-only" style="display:flex;align-items:center;justify-content:space-between;background:var(--bg-subtle);border:1px solid var(--border);border-radius:10px;padding:8px 14px;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-weight:700;font-size:0.88rem;" id="bulk-selected-count">0 requests selected</span>
+            <span class="muted small">Batch review for pending queue items</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <button type="button" id="bulk-approve-btn" class="btn btn-sm btn-special" style="font-size:0.78rem;padding:4px 12px;">✅ Bulk Approve</button>
+            <button type="button" id="bulk-reject-btn" class="btn btn-sm btn-secondary" style="color:var(--accent-red);font-size:0.78rem;padding:4px 12px;">❌ Bulk Reject</button>
+            <button type="button" id="bulk-clear-btn" class="btn btn-sm btn-secondary" style="font-size:0.75rem;padding:4px 8px;">Deselect All</button>
+          </div>
+        </div>
         <div class="card table-wrap">
           <table>
             <thead>
               <tr>
+                <th style="width:36px;" class="approver-only hidden"><input type="checkbox" id="bulk-select-all" title="Select all pending" /></th>
                 <th>ID</th>
                 <th>Title &amp; Type</th>
                 <th>Requester</th>
@@ -357,7 +370,8 @@
                 <textarea id="req-description" rows="4" placeholder="Describe the business purpose and details of your request..." required></textarea>
               </label>
               <label>Supporting Documentation (Receipts, Invoices, Proofs)
-                <input type="file" id="req-attachment" />
+                <input type="file" id="req-attachment" multiple />
+                <span class="muted small" style="display:block;margin-top:2px;">You can select multiple files / receipts (PDF, PNG, JPG).</span>
               </label>
               <div class="form-actions">
                 <button type="button" id="nlp-preview-btn" class="btn btn-secondary">Policy Check</button>
@@ -673,6 +687,72 @@
         <div class="form-actions" style="margin-top:18px;display:flex;justify-content:flex-end;gap:10px;">
           <button type="button" id="pwd-cancel-btn" class="btn btn-secondary btn-sm">Cancel</button>
           <button type="submit" class="btn btn-special btn-sm">Save New Password</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- User Self-Service Profile Modal -->
+  <div id="profile-modal" class="modal hidden">
+    <div class="modal-card" style="max-width:540px;">
+      <div class="modal-header">
+        <div style="flex:1;">
+          <span class="detail-badge-type">User Profile &amp; Preferences</span>
+          <h3 class="modal-title-text" style="margin-top:4px;">My Account Profile</h3>
+        </div>
+        <button id="profile-modal-close-btn" class="btn btn-secondary btn-sm">Close</button>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:14px;padding:12px 14px;background:var(--bg-subtle);border-radius:12px;border:1px solid var(--border);margin-bottom:14px;">
+        <div id="profile-avatar" class="user-avatar-circle" style="width:48px;height:48px;font-size:1.1rem;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;border-radius:50%;font-weight:700;flex-shrink:0;">U</div>
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <h4 id="profile-fullname" style="margin:0;font-size:1.05rem;color:var(--ink);">User Name</h4>
+            <span id="profile-role-badge" class="user-role-badge">ROLE</span>
+          </div>
+          <div class="muted small" style="margin-top:2px;">
+            <span id="profile-username">@username</span> &bull; <span id="profile-dept">Department</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Activity Metrics Grid -->
+      <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:8px;margin-bottom:14px;">
+        <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:8px 10px;text-align:center;">
+          <div class="muted small" style="font-size:0.72rem;">Total Submitted</div>
+          <div id="profile-stat-total" style="font-size:1.15rem;font-weight:700;color:var(--primary);margin-top:2px;">0</div>
+        </div>
+        <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:8px 10px;text-align:center;">
+          <div class="muted small" style="font-size:0.72rem;">Approved</div>
+          <div id="profile-stat-approved" style="font-size:1.15rem;font-weight:700;color:#059669;margin-top:2px;">0</div>
+        </div>
+        <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:8px 10px;text-align:center;">
+          <div class="muted small" style="font-size:0.72rem;">In Review</div>
+          <div id="profile-stat-pending" style="font-size:1.15rem;font-weight:700;color:#D97706;margin-top:2px;">0</div>
+        </div>
+      </div>
+
+      <!-- Update Profile Form -->
+      <form id="profile-form">
+        <label>Full Name <span class="req-star">*</span>
+          <input type="text" id="profile-input-fullname" required />
+        </label>
+        <label style="margin-top:10px;">Corporate Email <span class="req-star">*</span>
+          <input type="email" id="profile-input-email" required />
+        </label>
+        <hr style="margin:14px 0;border:0;border-top:1px solid var(--border);" />
+        <h4 style="margin:0 0 8px 0;font-size:0.88rem;color:var(--ink);">Change Password (Optional)</h4>
+        <div class="form-row">
+          <label style="flex:1;">Current Password
+            <input type="password" id="profile-current-pwd" placeholder="Enter current password" />
+          </label>
+          <label style="flex:1;">New Password
+            <input type="password" id="profile-new-pwd" placeholder="Min 8 chars, mixed case, #, !" />
+          </label>
+        </div>
+        <div class="form-actions" style="margin-top:16px;display:flex;justify-content:flex-end;gap:10px;">
+          <button type="button" id="profile-cancel-btn" class="btn btn-secondary btn-sm">Cancel</button>
+          <button type="submit" class="btn btn-special btn-sm">Save Profile Changes</button>
         </div>
       </form>
     </div>

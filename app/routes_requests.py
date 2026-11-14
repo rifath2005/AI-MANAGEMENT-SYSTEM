@@ -199,10 +199,11 @@ def create_request():
             "urgency": request.form.get("urgency", "normal"),
             "is_draft": request.form.get("is_draft") in ("1", "true", "True"),
         }
-        uploaded_file = request.files.get("attachment")
+        raw_files = request.files.getlist("attachment") + request.files.getlist("attachments")
+        uploaded_files = [f for f in raw_files if f and f.filename]
     else:
         payload = request.get_json(silent=True) or {}
-        uploaded_file = None
+        uploaded_files = []
 
     title = (payload.get("title") or "").strip()
     description = (payload.get("description") or "").strip()
@@ -224,28 +225,31 @@ def create_request():
     if not payload.get("urgency"):
         payload["urgency"] = nlp_meta["urgency"]
 
-    has_attachment = bool(uploaded_file and uploaded_file.filename)
-    if has_attachment and not _allowed_file(uploaded_file.filename):
-        return jsonify({"error": "Unsupported attachment file type"}), 400
+    has_attachment = len(uploaded_files) > 0
+    if has_attachment:
+        for f in uploaded_files:
+            if not _allowed_file(f.filename):
+                return jsonify({"error": f"Unsupported attachment file type: {f.filename}"}), 400
 
     result = submit_and_route_request(db, user, payload, has_attachment=has_attachment)
     req_id = result["request_id"]
 
     if has_attachment:
-        file_bytes = uploaded_file.read()
-        stored = save_attachment_bytes(db, req_id, uploaded_file.filename, file_bytes, uploaded_file.mimetype)
-        sha256 = hashlib.sha256(file_bytes).hexdigest()
-        db.execute(
-            """
-            INSERT INTO request_attachments (request_id, original_filename, stored_filename, storage_backend, content_type, size_bytes, sha256_hash, uploaded_by, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (req_id, stored["original_filename"], stored["stored_filename"], stored["backend"], uploaded_file.mimetype, len(file_bytes), sha256, user["id"], utcnow_iso()),
-        )
-        append_audit_log(
-            db, user["id"], user["username"], "ATTACHMENT_UPLOADED", "request", req_id,
-            {"filename": stored["original_filename"], "size_bytes": len(file_bytes), "backend": stored["backend"]}
-        )
+        for f in uploaded_files:
+            file_bytes = f.read()
+            stored = save_attachment_bytes(db, req_id, f.filename, file_bytes, f.mimetype)
+            sha256 = hashlib.sha256(file_bytes).hexdigest()
+            db.execute(
+                """
+                INSERT INTO request_attachments (request_id, original_filename, stored_filename, storage_backend, content_type, size_bytes, sha256_hash, uploaded_by, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (req_id, stored["original_filename"], stored["stored_filename"], stored["backend"], f.mimetype, len(file_bytes), sha256, user["id"], utcnow_iso()),
+            )
+            append_audit_log(
+                db, user["id"], user["username"], "ATTACHMENT_UPLOADED", "request", req_id,
+                {"filename": stored["original_filename"], "size_bytes": len(file_bytes), "backend": stored["backend"]}
+            )
         db.commit()
 
     return jsonify(result), 201
@@ -383,6 +387,46 @@ def decide_request(request_id: int):
         get_db(), g.current_user, request_id, decision, comment, rejection_reason=rejection_reason
     )
     return jsonify(res), code
+
+
+@requests_bp.route("/requests/bulk-decision", methods=["POST"])
+@require_roles("manager", "approver", "hr", "admin")
+def bulk_decision():
+    """Batch approve or reject multiple requests simultaneously."""
+    data = request.get_json(silent=True) or {}
+    request_ids = data.get("request_ids") or []
+    decision = (data.get("decision") or "approved").strip().lower()
+    comment = (data.get("comment") or "").strip() or f"Batch {decision} by {g.current_user['role']}"
+    rejection_reason = (data.get("rejection_reason") or "").strip() or None
+
+    if not isinstance(request_ids, list) or not request_ids:
+        return jsonify({"error": "request_ids list is required"}), 400
+    if decision not in ("approved", "rejected"):
+        return jsonify({"error": "decision must be 'approved' or 'rejected'"}), 400
+
+    db = get_db()
+    processed = []
+    skipped = []
+
+    for rid in request_ids:
+        try:
+            req_id_int = int(rid)
+            res, code = process_approval_decision(
+                db, g.current_user, req_id_int, decision, comment=comment, rejection_reason=rejection_reason
+            )
+            if code == 200:
+                processed.append({"id": req_id_int, "status": res["status"]})
+            else:
+                skipped.append({"id": req_id_int, "reason": res.get("error", "Failed")})
+        except Exception as e:
+            skipped.append({"id": rid, "reason": str(e)})
+
+    return jsonify({
+        "processed_count": len(processed),
+        "processed": processed,
+        "skipped_count": len(skipped),
+        "skipped": skipped,
+    })
 
 
 @requests_bp.route("/rejection-reasons", methods=["GET"])

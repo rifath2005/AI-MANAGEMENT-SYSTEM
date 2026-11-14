@@ -417,6 +417,14 @@ def predict_bottlenecks_and_forecast(db) -> dict:
         daily_counts[day_key] += 1
 
     sorted_days = sorted(daily_counts.keys())
+    forecast_series = []
+    from datetime import date, timedelta
+    last_date_str = sorted_days[-1] if sorted_days else date.today().isoformat()
+    try:
+        last_d = date.fromisoformat(last_date_str)
+    except Exception:
+        last_d = date.today()
+
     if len(sorted_days) >= 3:
         y_vals = np.array([daily_counts[d] for d in sorted_days], dtype=float)
         x_vals = np.arange(len(y_vals)).reshape(-1, 1)
@@ -426,9 +434,16 @@ def predict_bottlenecks_and_forecast(db) -> dict:
         next_7_preds = np.clip(reg.predict(future_x), 0.5, None)
         next_7_total = int(round(float(np.sum(next_7_preds))))
         trend = "increasing" if slope > 0.03 else ("decreasing" if slope < -0.03 else "stable")
+        for i, pred_val in enumerate(next_7_preds):
+            d_next = (last_d + timedelta(days=i + 1)).isoformat()
+            forecast_series.append({"date": d_next, "count": max(1, int(round(float(pred_val))))})
     else:
         next_7_total = max(len(req_rows), 7)
         trend = "stable"
+        avg_daily = max(1, int(round(next_7_total / 7.0)))
+        for i in range(7):
+            d_next = (last_d + timedelta(days=i + 1)).isoformat()
+            forecast_series.append({"date": d_next, "count": avg_daily})
 
     return {
         "bottlenecks": bottlenecks,
@@ -438,6 +453,7 @@ def predict_bottlenecks_and_forecast(db) -> dict:
             "predicted_next_30_days_requests": int(round(next_7_total * (30.0 / 7.0))),
             "trend": trend,
             "daily_series": [{"date": d, "count": daily_counts[d]} for d in sorted_days[-14:]],
+            "forecast_series": forecast_series,
         },
     }
 

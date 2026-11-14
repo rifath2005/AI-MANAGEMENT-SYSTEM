@@ -241,3 +241,109 @@ def test_user_lifecycle_password_reset_and_deactivation(client):
     )
     assert reactivate_res.status_code == 200
     assert reactivate_res.get_json()["is_active"] is True
+
+
+def test_user_self_service_profile_and_stats(client):
+    req_hdr = auth_header(client, "nadia.patel", "ReqPass#2026")
+
+    # 1. Check me returns stats
+    me_res = client.get("/api/auth/me", headers=req_hdr)
+    assert me_res.status_code == 200
+    user = me_res.get_json()["user"]
+    assert "stats" in user
+    assert "total_submitted" in user["stats"]
+
+    # 2. Update own profile
+    update_res = client.patch(
+        "/api/auth/profile",
+        headers=req_hdr,
+        json={"full_name": "Nadia Patel-Kumar", "email": "nadia.kumar@company.com"},
+    )
+    assert update_res.status_code == 200
+    assert update_res.get_json()["user"]["full_name"] == "Nadia Patel-Kumar"
+
+    # 3. Change own password
+    pwd_res = client.patch(
+        "/api/auth/profile",
+        headers=req_hdr,
+        json={"current_password": "ReqPass#2026", "new_password": "MySelfPass#2026"},
+    )
+    assert pwd_res.status_code == 200
+
+    # 4. Login with newly changed password
+    login_res = client.post(
+        "/api/auth/login",
+        json={"email": "nadia.kumar@company.com", "password": "MySelfPass#2026", "portal": "requester"},
+    )
+    assert login_res.status_code == 200
+
+
+def test_multi_receipt_attachments_upload(client):
+    import io
+    req_hdr = auth_header(client, "nadia.patel", "ReqPass#2026")
+
+    f1 = (io.BytesIO(b"%PDF-1.4 flight receipt test"), "flight_ticket.pdf")
+    f2 = (io.BytesIO(b"%PDF-1.4 hotel receipt test"), "hotel_invoice.pdf")
+
+    res = client.post(
+        "/api/requests",
+        headers=req_hdr,
+        data={
+            "request_type": "expense_report",
+            "title": "Dual Receipt Trip Expenses",
+            "description": "Flight and lodging expenses",
+            "amount": "850.00",
+            "currency": "USD",
+            "urgency": "normal",
+            "attachment": [f1, f2],
+        },
+        content_type="multipart/form-data",
+    )
+    assert res.status_code == 201
+    req_id = res.get_json()["request_id"]
+
+    # Verify both attachments are stored and returned
+    detail_res = client.get(f"/api/requests/{req_id}", headers=req_hdr)
+    assert detail_res.status_code == 200
+    attachments = detail_res.get_json()["attachments"]
+    assert len(attachments) == 2
+    filenames = [a["original_filename"] for a in attachments]
+    assert "flight_ticket.pdf" in filenames
+    assert "hotel_invoice.pdf" in filenames
+
+
+def test_bulk_approvals_and_decisions(client):
+    req_hdr = auth_header(client, "nadia.patel", "ReqPass#2026")
+    mgr_hdr = auth_header(client, "rohan.mehta", "MgrPass#2026")
+
+    # Create two requests that exceed auto-approval limit ($250)
+    r1 = client.post(
+        "/api/requests",
+        headers=req_hdr,
+        json={"request_type": "expense_report", "title": "Batch Expense 1", "description": "Client lunch", "amount": 300, "currency": "USD"},
+    ).get_json()["request_id"]
+
+    r2 = client.post(
+        "/api/requests",
+        headers=req_hdr,
+        json={"request_type": "expense_report", "title": "Batch Expense 2", "description": "Dev book bundle", "amount": 320, "currency": "USD"},
+    ).get_json()["request_id"]
+
+    # Manager bulk-approves both
+    bulk_res = client.post(
+        "/api/requests/bulk-decision",
+        headers=mgr_hdr,
+        json={"request_ids": [r1, r2], "decision": "approved", "comment": "Batch approval of quarterly expenses"},
+    )
+    assert bulk_res.status_code == 200
+    assert bulk_res.get_json()["processed_count"] == 2
+
+
+def test_volume_forecast_series(client):
+    mgr_hdr = auth_header(client, "rohan.mehta", "MgrPass#2026")
+    res = client.get("/api/analytics/predictions", headers=mgr_hdr)
+    assert res.status_code == 200
+    vf = res.get_json()["volume_forecast"]
+    assert "forecast_series" in vf
+    assert len(vf["forecast_series"]) == 7
+    assert "count" in vf["forecast_series"][0]

@@ -1,6 +1,7 @@
 """Workflow routing, multi-level sequential/parallel execution, notifications, and reminders."""
 
 import json
+import os
 from datetime import datetime, timezone
 
 from .ai_engine import ai_engine
@@ -39,13 +40,41 @@ def dispatch_email(
     if not recipient_email:
         return
     now = utcnow_iso()
+    delivery_status = "simulated"
+
+    smtp_host = os.environ.get("SMTP_HOST")
+    if smtp_host:
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+
+            smtp_port = int(os.environ.get("SMTP_PORT", 587))
+            smtp_user = os.environ.get("SMTP_USER")
+            smtp_pass = os.environ.get("SMTP_PASS")
+            sender = os.environ.get("SMTP_FROM", "noreply@ams-enterprise.com")
+
+            msg = MIMEText(body, "plain", "utf-8")
+            msg["Subject"] = subject
+            msg["From"] = sender
+            msg["To"] = recipient_email
+
+            with smtplib.SMTP(smtp_host, smtp_port, timeout=3) as server:
+                if os.environ.get("SMTP_USE_TLS", "true").lower() in ("true", "1"):
+                    server.starttls()
+                if smtp_user and smtp_pass:
+                    server.login(smtp_user, smtp_pass)
+                server.send_message(msg)
+            delivery_status = "sent"
+        except Exception:
+            delivery_status = "failed"
+
     try:
         db.execute(
             """
-            INSERT INTO email_dispatches (recipient_email, recipient_name, subject, body, category, request_id, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO email_dispatches (recipient_email, recipient_name, subject, body, category, request_id, delivery_status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (recipient_email, recipient_name or recipient_email, subject, body, category, request_id, now),
+            (recipient_email, recipient_name or recipient_email, subject, body, category, request_id, delivery_status, now),
         )
     except Exception:
         pass

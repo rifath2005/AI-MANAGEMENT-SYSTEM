@@ -189,9 +189,67 @@ def register_requester():
 @auth_bp.route("/auth/me", methods=["GET"])
 @require_auth
 def me():
+    db = get_db()
     user = dict(g.current_user)
     user["capabilities"] = ROLE_CAPABILITIES.get(user["role"], [])
+    stats = db.execute(
+        """
+        SELECT COUNT(*) AS total_submitted,
+               COALESCE(SUM(CASE WHEN status IN ('pending', 'in_review', 'flagged') THEN 1 ELSE 0 END), 0) AS pending_count,
+               COALESCE(SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END), 0) AS approved_count,
+               COALESCE(SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END), 0) AS rejected_count,
+               COALESCE(SUM(amount), 0) AS total_amount_spent
+        FROM requests WHERE requester_id = ?
+        """,
+        (user["id"],),
+    ).fetchone()
+    user["stats"] = dict(stats) if stats else {}
     return jsonify({"user": user})
+
+
+@auth_bp.route("/auth/profile", methods=["PATCH"])
+@require_auth
+def update_own_profile():
+    """Allow logged in users to update their own full name, email, or change password."""
+    data = request.get_json(silent=True) or {}
+    db = get_db()
+    user_id = g.current_user["id"]
+    current_user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not current_user:
+        return jsonify({"error": "User not found"}), 404
+
+    full_name = (data.get("full_name") or current_user["full_name"]).strip()
+    email = (data.get("email") or current_user["email"]).strip().lower()
+
+    if not full_name or not email:
+        return jsonify({"error": "full_name and email cannot be empty"}), 400
+
+    new_password = (data.get("new_password") or "").strip()
+    if new_password:
+        current_password = data.get("current_password") or ""
+        if not verify_password(current_password, current_user["password_hash"]):
+            return jsonify({"error": "Current password is incorrect"}), 403
+        pwd_err = validate_password_strength(new_password)
+        if pwd_err:
+            return jsonify({"error": pwd_err}), 400
+        db.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?",
+            (hash_password(new_password), user_id),
+        )
+
+    db.execute(
+        "UPDATE users SET full_name = ?, email = ? WHERE id = ?",
+        (full_name, email, user_id),
+    )
+    now = utcnow_iso()
+    append_audit_log(
+        db, user_id, current_user["username"], "PROFILE_UPDATED", "user", user_id,
+        {"full_name": full_name, "email": email, "password_changed": bool(new_password)},
+        now,
+    )
+    db.commit()
+    updated = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    return jsonify({"user": _user_payload(updated), "message": "Profile updated successfully"})
 
 
 @auth_bp.route("/users", methods=["GET"])
