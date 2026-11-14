@@ -84,9 +84,40 @@
 
       <!-- Right Auth Form Panel -->
       <div class="wave-form-panel">
+        <!-- Portal Session Status Pill (matching sample design) -->
+        <div class="portal-badge-pill {% if portal_role == 'admin' %}admin-pill{% endif %}">
+          <span class="pulse-dot {% if portal_role == 'admin' %}admin-dot{% endif %}"></span>
+          {% if portal_role == 'admin' %}
+            Administrator Portal • Privileged Security Session
+          {% else %}
+            Corporate Staff Portal • Encrypted Enterprise Session
+          {% endif %}
+        </div>
+
+        <!-- Glowing Emblem Icon Badge (matching sample design) -->
+        <div class="portal-emblem-badge {% if portal_role == 'admin' %}admin-emblem{% else %}staff-emblem{% endif %}" aria-hidden="true">
+          {% if portal_role == 'admin' %}
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+          {% else %}
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+              <path d="M9 12l2 2 4-4"></path>
+            </svg>
+          {% endif %}
+        </div>
+
         <div class="form-panel-head">
-          <h2>{% if portal_role == 'admin' %}Security Verification{% else %}Account Access{% endif %}</h2>
-          <p class="small muted">Enter your corporate credentials to continue.</p>
+          <h2>{% if portal_role == 'admin' %}Administrator Sign In{% else %}Welcome Back{% endif %}</h2>
+          <p class="small muted">
+            {% if portal_role == 'admin' %}
+              Enter your privileged credentials to access governance and audit controls.
+            {% else %}
+              Log in to access your enterprise approvals and workflow workspace.
+            {% endif %}
+          </p>
         </div>
 
         {% if portal_role in ('staff', 'requester') %}
@@ -96,27 +127,55 @@
           </div>
         {% endif %}
 
-        <!-- Sign-In Form (always empty by default — zero prefilled credentials) -->
+        <!-- Sign-In Form (Email-first with dynamic pop-up password section) -->
         <form id="login-form" autocomplete="on" novalidate>
-          <label for="login-email">{% if portal_role == 'admin' %}Administrator Corporate Email{% else %}Corporate Email{% endif %} <span class="req-star" title="Required">*</span>
-            <input type="email" id="login-email" name="email" autocomplete="email" placeholder="{% if portal_role == 'admin' %}e.g. sysadmin@company.com{% else %}e.g. nadia.patel@company.com{% endif %}" required aria-required="true" aria-describedby="login-email-error" />
-          </label>
-          <span id="login-email-error" class="field-error hidden" role="alert"></span>
-          <span id="login-username-error" class="field-error hidden" role="alert"></span>
+          <div class="field-container" id="login-email-container">
+            <label for="login-email">{% if portal_role == 'admin' %}Administrator Corporate Email{% else %}Corporate Email{% endif %} <span class="req-star" title="Required">*</span>
+              <div class="input-wrap">
+                <input type="email" id="login-email" name="email" autocomplete="email" placeholder="{% if portal_role == 'admin' %}e.g. sysadmin@company.com{% else %}e.g. nadia.patel@company.com{% endif %}" required aria-required="true" aria-describedby="login-email-error" />
+                <span class="email-verified-icon hidden" id="login-email-check" aria-hidden="true">✓</span>
+              </div>
+            </label>
+            <span id="login-email-error" class="field-error hidden" role="alert"></span>
+            <span id="login-username-error" class="field-error hidden" role="alert"></span>
+            <p class="field-hint muted" id="login-email-hint">{% if portal_role == 'admin' %}Enter your registered administrator email to proceed{% else %}Enter your registered corporate email to proceed{% endif %}</p>
+          </div>
 
-          <label for="login-password">Password <span class="req-star" title="Required">*</span>
-            <div class="password-wrap">
-              <input type="password" id="login-password" name="password" autocomplete="current-password" placeholder="Enter valid email first" required aria-required="true" aria-describedby="login-password-error" disabled />
-              <button type="button" class="toggle-pass-btn" id="toggle-login-pass" disabled aria-label="Toggle password visibility">Show</button>
-            </div>
-          </label>
-          <span id="login-password-error" class="field-error hidden" role="alert"></span>
-          <p id="login-password-hint" class="field-hint muted">Password unlocks after entering a valid corporate email.</p>
-
-          <button type="submit" id="login-submit-btn" class="btn btn-special full-width" disabled>
-            {% if portal_role == 'admin' %}Authenticate Admin Gateway{% else %}Sign In{% endif %}
+          <!-- Step 1 Continue button (matching sample image "Continue with Email ->") -->
+          <button type="button" id="login-continue-btn" class="btn btn-special full-width login-continue-btn">
+            Continue with Email <span class="btn-arrow" aria-hidden="true">&rarr;</span>
           </button>
+
+          <!-- Step 2 Password Section (POPS UP dynamically when email is valid) -->
+          <div id="login-password-section" class="password-popup-section is-hidden" aria-hidden="true">
+            <div class="active-email-pill" id="active-email-pill" style="display:none;">
+              <span class="pill-dot">●</span>
+              <span class="pill-email-text" id="pill-email-text"></span>
+              <button type="button" class="pill-change-btn" id="login-change-email-btn" aria-label="Change email address">Change</button>
+            </div>
+
+            <label for="login-password">Password <span class="req-star" title="Required">*</span>
+              <div class="password-wrap">
+                <input type="password" id="login-password" name="password" autocomplete="current-password" placeholder="Enter valid email first" required aria-required="true" aria-describedby="login-password-error" disabled />
+                <button type="button" class="toggle-pass-btn" id="toggle-login-pass" disabled aria-label="Toggle password visibility">Show</button>
+              </div>
+            </label>
+            <span id="login-password-error" class="field-error hidden" role="alert"></span>
+            <p id="login-password-hint" class="field-hint muted">Password unlocks after entering a valid corporate email.</p>
+
+            <button type="submit" id="login-submit-btn" class="btn btn-special full-width" disabled>
+              {% if portal_role == 'admin' %}Authenticate Admin Gateway &rarr;{% else %}Sign In &rarr;{% endif %}
+            </button>
+          </div>
+
           <p id="login-error" class="error-text hidden" role="alert"></p>
+
+          <!-- Security Trust Badges footer (matching sample image) -->
+          <div class="auth-trust-footer">
+            <span class="trust-item"><span class="trust-icon">🔒</span> TLS 256-Bit SSL</span>
+            <span class="trust-item"><span class="trust-icon">🛡</span> Role-Based Access</span>
+            <span class="trust-item"><span class="trust-icon">⚡</span> Zero-Trust Audit</span>
+          </div>
         </form>
 
         {% if portal_role in ('staff', 'requester') %}
@@ -157,51 +216,57 @@
               </select>
             </label>
 
-            <label for="signup-email">Corporate Email <span class="req-star" title="Required">*</span>
-              <input type="email" id="signup-email" placeholder="priya.sharma@company.com" required aria-required="true" aria-describedby="signup-email-error" />
-            </label>
-            <span id="signup-email-error" class="field-error hidden" role="alert"></span>
+            <div class="field-container" id="signup-email-container">
+              <label for="signup-email">Corporate Email <span class="req-star" title="Required">*</span>
+                <input type="email" id="signup-email" placeholder="priya.sharma@company.com" required aria-required="true" aria-describedby="signup-email-error" />
+              </label>
+              <span id="signup-email-error" class="field-error hidden" role="alert"></span>
+              <p class="field-hint muted" id="signup-email-hint">Enter your corporate email address to unlock password setup</p>
+            </div>
 
-            <label for="signup-password">Password <span class="req-star" title="Required">*</span>
-              <div class="password-wrap">
-                <input type="password" id="signup-password" autocomplete="new-password" placeholder="Enter valid email first" required aria-required="true" aria-describedby="signup-password-error" disabled />
-                <button type="button" class="toggle-pass-btn" id="toggle-signup-pass" disabled aria-label="Toggle password visibility">Show</button>
-              </div>
-            </label>
-            <span id="signup-password-error" class="field-error hidden" role="alert"></span>
-            <p id="signup-password-hint" class="field-hint muted">Password unlocks after entering a valid corporate email.</p>
+            <!-- Password setup section (pops up dynamically when corporate email is valid) -->
+            <div id="signup-password-section" class="password-popup-section is-hidden" aria-hidden="true">
+              <label for="signup-password">Password <span class="req-star" title="Required">*</span>
+                <div class="password-wrap">
+                  <input type="password" id="signup-password" autocomplete="new-password" placeholder="Enter valid email first" required aria-required="true" aria-describedby="signup-password-error" disabled />
+                  <button type="button" class="toggle-pass-btn" id="toggle-signup-pass" disabled aria-label="Toggle password visibility">Show</button>
+                </div>
+              </label>
+              <span id="signup-password-error" class="field-error hidden" role="alert"></span>
+              <p id="signup-password-hint" class="field-hint muted">Password unlocks after entering a valid corporate email.</p>
 
-            <!-- Password Strength Feedback (Live Indicator + Plain-Language Checklist) -->
-            <div id="signup-password-strength-box" class="password-strength-box hidden" aria-live="polite">
-              <div class="strength-meter-header">
-                <span class="strength-caption">Password Strength:</span>
-                <span id="signup-strength-label" class="strength-badge strength-none">None</span>
+              <!-- Password Strength Feedback (Live Indicator + Plain-Language Checklist) -->
+              <div id="signup-password-strength-box" class="password-strength-box hidden" aria-live="polite">
+                <div class="strength-meter-header">
+                  <span class="strength-caption">Password Strength:</span>
+                  <span id="signup-strength-label" class="strength-badge strength-none">None</span>
+                </div>
+                <div class="strength-meter-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="signup-strength-progress">
+                  <div id="signup-strength-bar" class="strength-meter-bar strength-bar-none"></div>
+                </div>
+                <ul class="password-checklist" id="signup-password-checklist" aria-label="Password rules">
+                  <li id="rule-length" class="checklist-item is-unmet">
+                    <span class="check-icon" aria-hidden="true">○</span>
+                    <span>At least 8 characters in length</span>
+                  </li>
+                  <li id="rule-upper" class="checklist-item is-unmet">
+                    <span class="check-icon" aria-hidden="true">○</span>
+                    <span>At least one uppercase letter (A–Z)</span>
+                  </li>
+                  <li id="rule-lower" class="checklist-item is-unmet">
+                    <span class="check-icon" aria-hidden="true">○</span>
+                    <span>At least one lowercase letter (a–z)</span>
+                  </li>
+                  <li id="rule-digit" class="checklist-item is-unmet">
+                    <span class="check-icon" aria-hidden="true">○</span>
+                    <span>At least one numeric digit (0–9)</span>
+                  </li>
+                  <li id="rule-special" class="checklist-item is-unmet">
+                    <span class="check-icon" aria-hidden="true">○</span>
+                    <span>At least one special character (!@#$%^&amp;*)</span>
+                  </li>
+                </ul>
               </div>
-              <div class="strength-meter-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="signup-strength-progress">
-                <div id="signup-strength-bar" class="strength-meter-bar strength-bar-none"></div>
-              </div>
-              <ul class="password-checklist" id="signup-password-checklist" aria-label="Password rules">
-                <li id="rule-length" class="checklist-item is-unmet">
-                  <span class="check-icon" aria-hidden="true">○</span>
-                  <span>At least 8 characters in length</span>
-                </li>
-                <li id="rule-upper" class="checklist-item is-unmet">
-                  <span class="check-icon" aria-hidden="true">○</span>
-                  <span>At least one uppercase letter (A–Z)</span>
-                </li>
-                <li id="rule-lower" class="checklist-item is-unmet">
-                  <span class="check-icon" aria-hidden="true">○</span>
-                  <span>At least one lowercase letter (a–z)</span>
-                </li>
-                <li id="rule-digit" class="checklist-item is-unmet">
-                  <span class="check-icon" aria-hidden="true">○</span>
-                  <span>At least one numeric digit (0–9)</span>
-                </li>
-                <li id="rule-special" class="checklist-item is-unmet">
-                  <span class="check-icon" aria-hidden="true">○</span>
-                  <span>At least one special character (!@#$%^&amp;*)</span>
-                </li>
-              </ul>
             </div>
 
             <button type="submit" id="signup-submit-btn" class="btn btn-special full-width" disabled>Submit Access Request</button>
