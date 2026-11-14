@@ -218,6 +218,9 @@
           <span class="theme-icon" aria-hidden="true">◐</span>
           <span class="theme-label">Dark Mode</span>
         </button>
+        <button id="ooo-btn" class="btn btn-secondary btn-sm approver-only hidden" title="Out of Office &amp; Delegation">
+          ✈️ Out of Office
+        </button>
         <button id="notif-toggle-btn" class="btn btn-secondary btn-sm">
           Alerts <span id="notif-badge" class="badge">0</span>
         </button>
@@ -234,6 +237,8 @@
       <div class="drawer-header">
         <h3>Notifications &amp; Alerts</h3>
         <div class="drawer-actions">
+          <button id="mark-all-read-btn" class="btn btn-sm btn-secondary" style="font-size:0.75rem;padding:2px 8px;">Mark All Read</button>
+          <button id="view-emails-btn" class="btn btn-sm btn-secondary" style="font-size:0.75rem;padding:2px 8px;">Dispatched Emails</button>
           <button id="sweep-reminders-btn" class="btn btn-sm btn-primary approver-only hidden">Check Deadlines</button>
           <button id="close-notif-btn" class="btn btn-sm btn-secondary">Close</button>
         </div>
@@ -284,8 +289,11 @@
               <option value="flagged">Flagged Anomaly</option>
               <option value="approved">Approved</option>
               <option value="rejected">Rejected</option>
+              <option value="withdrawn">Withdrawn</option>
+              <option value="draft">My Drafts</option>
             </select>
             <button id="refresh-requests-btn" class="btn btn-primary btn-sm">Refresh</button>
+            <button id="export-accounting-csv-btn" class="btn btn-secondary btn-sm approver-only hidden" title="Export filtered accounting report">📥 Export CSV</button>
           </div>
         </div>
         <div class="card table-wrap">
@@ -323,10 +331,21 @@
                 <input type="text" id="req-title" placeholder="e.g. Conference Flight & Hotel" required />
               </label>
               <div class="form-row">
-                <label>Amount / Days
+                <label style="flex:2;">Amount / Days
                   <input type="number" step="0.01" id="req-amount" placeholder="0.00" required />
                 </label>
-                <label>Urgency
+                <label style="flex:1;">Currency
+                  <select id="req-currency">
+                    <option value="USD">USD ($)</option>
+                    <option value="EUR">EUR (€)</option>
+                    <option value="GBP">GBP (£)</option>
+                    <option value="INR">INR (₹)</option>
+                    <option value="CAD">CAD (C$)</option>
+                    <option value="AUD">AUD (A$)</option>
+                    <option value="JPY">JPY (¥)</option>
+                  </select>
+                </label>
+                <label style="flex:1;">Urgency
                   <select id="req-urgency">
                     <option value="normal">Normal</option>
                     <option value="high">High</option>
@@ -341,7 +360,8 @@
                 <input type="file" id="req-attachment" />
               </label>
               <div class="form-actions">
-                <button type="button" id="nlp-preview-btn" class="btn btn-secondary">Policy Compliance Check</button>
+                <button type="button" id="nlp-preview-btn" class="btn btn-secondary">Policy Check</button>
+                <button type="button" id="save-draft-btn" class="btn btn-secondary" title="Save incomplete request to finish later">💾 Save Draft</button>
                 <button type="submit" class="btn btn-special">Submit Request</button>
               </div>
               <div id="nlp-preview-box" class="info-box hidden"></div>
@@ -538,6 +558,121 @@
         <div class="form-actions" style="margin-top:18px;display:flex;justify-content:flex-end;gap:10px;">
           <button type="button" id="policy-cancel-btn" class="btn btn-secondary btn-sm">Cancel</button>
           <button type="submit" class="btn btn-special btn-sm">Save Threshold Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Structured Rejection Reason Modal -->
+  <div id="rejection-modal" class="modal hidden">
+    <div class="modal-card" style="max-width:540px;">
+      <div class="modal-header">
+        <div style="flex:1;">
+          <span class="detail-badge-type" style="background:var(--accent-red-bg);color:var(--accent-red);">Decision Protocol</span>
+          <h3 class="modal-title-text" style="margin-top:4px;">Reject Request</h3>
+        </div>
+        <button id="rejection-modal-close-btn" class="btn btn-secondary btn-sm">Close</button>
+      </div>
+      <form id="rejection-form">
+        <input type="hidden" id="rej-request-id" />
+        <label>Standardized Rejection Reason <span class="req-star">*</span>
+          <select id="rej-reason-select" required>
+            <option value="">Select compliance or operational reason...</option>
+            <option value="MISSING_DOCS">Missing or Illegible Receipts / Documentation</option>
+            <option value="BUDGET_EXCEEDED">Exceeds Allocated Departmental Budget</option>
+            <option value="POLICY_VIOLATION">Company Policy Violation / Prohibited Expense</option>
+            <option value="UNAPPROVED_VENDOR">Unapproved Vendor or Procurement Channel</option>
+            <option value="DUPLICATE_SUBMISSION">Duplicate Request Submission</option>
+            <option value="OTHER">Other Discretionary Reason (Explain below)</option>
+          </select>
+        </label>
+        <label style="margin-top:12px;">Reviewer Notes / Guidance for Requester
+          <textarea id="rej-comment" rows="3" placeholder="Provide specific feedback on why this request is being returned or rejected..." required></textarea>
+        </label>
+        <div class="form-actions" style="margin-top:18px;display:flex;justify-content:flex-end;gap:10px;">
+          <button type="button" id="rejection-cancel-btn" class="btn btn-secondary btn-sm">Cancel</button>
+          <button type="submit" class="btn btn-sm" style="background:var(--accent-red);color:#fff;">Confirm Rejection</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Out of Office & Approval Delegation Modal -->
+  <div id="delegation-modal" class="modal hidden">
+    <div class="modal-card" style="max-width:620px;">
+      <div class="modal-header">
+        <div style="flex:1;">
+          <span class="detail-badge-type">Coverage Protocol</span>
+          <h3 class="modal-title-text" style="margin-top:4px;">Out of Office &amp; Approval Delegation</h3>
+        </div>
+        <button id="delegation-close-btn" class="btn btn-secondary btn-sm">Close</button>
+      </div>
+      <div style="margin-bottom:16px;">
+        <h4 style="margin:0 0 8px 0;font-size:0.95rem;">Active Delegations</h4>
+        <div id="active-delegations-list" style="background:var(--bg-subtle);border:1px solid var(--border);border-radius:10px;padding:12px;min-height:50px;">
+          <p class="muted small" style="margin:0;">No active delegations.</p>
+        </div>
+      </div>
+      <form id="delegation-form" style="border-top:1px solid var(--border);padding-top:14px;">
+        <h4 style="margin:0 0 10px 0;font-size:0.95rem;">Assign Coverage Delegate</h4>
+        <label>Select Colleague Delegate <span class="req-star">*</span>
+          <select id="del-colleague-select" required>
+            <option value="">Loading eligible colleagues...</option>
+          </select>
+        </label>
+        <div class="form-row" style="margin-top:10px;">
+          <label style="flex:1;">Coverage Start Date <span class="req-star">*</span>
+            <input type="date" id="del-start-date" required />
+          </label>
+          <label style="flex:1;">Coverage End Date <span class="req-star">*</span>
+            <input type="date" id="del-end-date" required />
+          </label>
+        </div>
+        <label style="margin-top:10px;">Handover Notes
+          <input type="text" id="del-notes" placeholder="e.g. Annual leave coverage for Q4 engineering approvals" />
+        </label>
+        <div class="form-actions" style="margin-top:16px;display:flex;justify-content:flex-end;gap:10px;">
+          <button type="button" id="delegation-cancel-btn" class="btn btn-secondary btn-sm">Cancel</button>
+          <button type="submit" class="btn btn-special btn-sm">Activate Delegation</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Dispatched Email Notifications Modal -->
+  <div id="emails-modal" class="modal hidden">
+    <div class="modal-card" style="max-width:700px;">
+      <div class="modal-header">
+        <div style="flex:1;">
+          <span class="detail-badge-type">Audit &amp; Dispatch</span>
+          <h3 class="modal-title-text" style="margin-top:4px;">Dispatched Email Notifications</h3>
+        </div>
+        <button id="emails-close-btn" class="btn btn-secondary btn-sm">Close</button>
+      </div>
+      <p class="muted small">Live log of outbound email notifications generated by workflow routing and SLA alarms.</p>
+      <div id="emails-list" style="max-height:400px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;margin-top:12px;"></div>
+    </div>
+  </div>
+
+  <!-- Admin User Password Reset Modal -->
+  <div id="user-pwd-modal" class="modal hidden">
+    <div class="modal-card" style="max-width:480px;">
+      <div class="modal-header">
+        <div style="flex:1;">
+          <span class="detail-badge-type">Security Credential Reset</span>
+          <h3 class="modal-title-text" id="pwd-modal-user-title" style="margin-top:4px;">Reset Account Password</h3>
+        </div>
+        <button id="pwd-modal-close-btn" class="btn btn-secondary btn-sm">Close</button>
+      </div>
+      <form id="user-pwd-form">
+        <input type="hidden" id="pwd-user-id" />
+        <label>New Strong Password <span class="req-star">*</span>
+          <input type="password" id="admin-new-password" placeholder="Min 8 chars, mixed case, number, symbol" required />
+        </label>
+        <p class="field-hint muted">Must include uppercase, lowercase, numeric digit, and special symbol.</p>
+        <div class="form-actions" style="margin-top:18px;display:flex;justify-content:flex-end;gap:10px;">
+          <button type="button" id="pwd-cancel-btn" class="btn btn-secondary btn-sm">Cancel</button>
+          <button type="submit" class="btn btn-special btn-sm">Save New Password</button>
         </div>
       </form>
     </div>

@@ -15,6 +15,8 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import StandardScaler
 
+from .currency import to_usd
+
 REQUEST_TYPE_MAP = {
     "expense_report": 0,
     "leave_request": 1,
@@ -229,6 +231,8 @@ class LocalAIEngine:
 
         rtype = req_data.get("request_type", "expense_report")
         amount = float(req_data.get("amount") or 0.0)
+        currency = (req_data.get("currency") or "USD").upper()
+        amount_usd = to_usd(amount, currency)
         desc = f"{req_data.get('title', '')} {req_data.get('description', '')}".lower()
         nlp_meta = extract_nlp_metadata(desc, fallback_type=rtype, fallback_amount=amount)
 
@@ -249,22 +253,24 @@ class LocalAIEngine:
                 compliance_issues.append(f"Blocked policy keyword(s): {', '.join(blocked_hits)}")
                 anomaly_reasons.append(f"Blocked keyword match: {', '.join(blocked_hits)}")
 
-            if amount > float(policy["max_allowed_amount"]):
-                compliance_issues.append(f"Amount {amount} exceeds policy max {policy['max_allowed_amount']}")
+            if amount_usd > float(policy["max_allowed_amount"]):
+                compliance_issues.append(
+                    f"Amount {amount} {currency} (~${amount_usd:.2f} USD) exceeds policy max ${policy['max_allowed_amount']}"
+                )
                 anomaly_reasons.append("Exceeds policy maximum limit")
 
-            if amount > float(policy["require_attachment_above"]) and not has_attachment:
+            if amount_usd > float(policy["require_attachment_above"]) and not has_attachment:
                 compliance_issues.append(
-                    f"Supporting attachment required above {policy['require_attachment_above']}"
+                    f"Supporting attachment required above ${policy['require_attachment_above']} USD"
                 )
 
         # Statistical outlier check against historical approved baseline
         if rtype in self.type_amount_stats:
             mean_amt, std_amt = self.type_amount_stats[rtype]
-            z_score = (amount - mean_amt) / std_amt
-            if z_score > 2.5 and amount > mean_amt * 2.5:
+            z_score = (amount_usd - mean_amt) / std_amt
+            if z_score > 2.5 and amount_usd > mean_amt * 2.5:
                 anomaly_reasons.append(
-                    f"Amount ({amount:.2f}) is {z_score:.1f}x std-dev above approved {rtype} average ({mean_amt:.2f})"
+                    f"Amount ({amount:.2f} {currency}) is {z_score:.1f}x std-dev above approved {rtype} average ({mean_amt:.2f} USD)"
                 )
 
         # ML inference
@@ -293,7 +299,7 @@ class LocalAIEngine:
 
         # Combine ML probability + policy/anomaly into risk_score & recommendation
         risk_score = 1.0 - approve_prob
-        if blocked_hits or (policy and amount > float(policy["max_allowed_amount"])):
+        if blocked_hits or (policy and amount_usd > float(policy["max_allowed_amount"])):
             risk_score = max(risk_score, 0.85)
         elif compliance_issues:
             risk_score = max(risk_score, 0.55)
@@ -314,15 +320,16 @@ class LocalAIEngine:
             policy
             and not is_anomaly
             and not compliance_issues
-            and amount <= float(policy["auto_approve_max_amount"])
+            and amount_usd <= float(policy["auto_approve_max_amount"])
             and recommendation == "approve"
             and risk_score <= 0.35
         )
 
         explanation_parts = []
         if auto_approve_eligible:
+            curr_str = f" ({amount} {currency} [~${amount_usd:.2f} USD])" if currency != "USD" else f" (${amount})"
             explanation_parts.append(
-                f"Eligible for auto-approval (amount {amount} <= policy threshold {policy['auto_approve_max_amount']}, low risk {risk_score})."
+                f"Eligible for auto-approval (amount{curr_str} <= policy threshold ${policy['auto_approve_max_amount']}, low risk {risk_score})."
             )
         else:
             explanation_parts.append(

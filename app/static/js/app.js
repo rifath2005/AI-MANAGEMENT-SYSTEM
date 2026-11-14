@@ -685,6 +685,48 @@ document.getElementById("sweep-reminders-btn").addEventListener("click", async (
   loadNotifications();
 });
 
+document.getElementById("mark-all-read-btn")?.addEventListener("click", async () => {
+  try {
+    await api("/api/notifications/read-all", { method: "POST" });
+    loadNotifications();
+  } catch (err) {
+    alert("Failed to mark notifications read: " + err.message);
+  }
+});
+
+document.getElementById("view-emails-btn")?.addEventListener("click", async () => {
+  showEl(document.getElementById("emails-modal"), true);
+  const listEl = document.getElementById("emails-list");
+  if (listEl) listEl.innerHTML = '<p class="muted small">Loading outbound email log...</p>';
+  try {
+    const res = await api("/api/notifications/emails");
+    if (!listEl) return;
+    listEl.innerHTML = (res.emails || []).length
+      ? res.emails
+          .map(
+            (em) => `
+        <div style="padding:10px 12px;background:var(--bg-subtle);border:1px solid var(--border);border-radius:10px;font-size:0.85rem;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;flex-wrap:wrap;gap:4px;">
+            <strong style="color:var(--primary);">${escapeHtml(em.subject)}</strong>
+            <span class="muted small">${formatDate(em.sent_at)}</span>
+          </div>
+          <div class="muted small" style="margin-bottom:6px;">
+            Recipient: <code>${escapeHtml(em.recipient_email)}</code> &bull; Template: <code>${escapeHtml(em.template)}</code>
+          </div>
+          <pre style="margin:0;padding:8px;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;font-size:0.8rem;white-space:pre-wrap;font-family:inherit;">${escapeHtml(em.body)}</pre>
+        </div>`
+          )
+          .join("")
+      : '<p class="muted small">No dispatched email logs found.</p>';
+  } catch (err) {
+    if (listEl) listEl.innerHTML = `<p class="error-text">Failed to load emails: ${escapeHtml(err.message)}</p>`;
+  }
+});
+
+document.getElementById("emails-close-btn")?.addEventListener("click", () => {
+  showEl(document.getElementById("emails-modal"), false);
+});
+
 async function loadNotifications() {
   const res = await api("/api/notifications");
   const unread = res.notifications.filter((n) => !n.is_read).length;
@@ -880,18 +922,37 @@ async function loadDashboard() {
 }
 
 window._goTab = switchTab;
-window._exportCsv = async () => {
-  const res = await fetch("/api/analytics/export.csv", {
-    headers: { Authorization: `Bearer ${state.token}` },
-  });
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "approval_report.csv";
-  a.click();
-  URL.revokeObjectURL(url);
+window._exportCsv = async (extraParams = {}) => {
+  const params = new URLSearchParams(extraParams);
+  const qs = params.toString() ? `?${params.toString()}` : "";
+  try {
+    const res = await fetch(`/api/analytics/export.csv${qs}`, {
+      headers: { Authorization: `Bearer ${state.token}` },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Export failed with status ${res.status}`);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `accounting_reconciliation_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    alert("Export CSV failed: " + err.message);
+  }
 };
+
+document.getElementById("export-accounting-csv-btn")?.addEventListener("click", () => {
+  const status = document.getElementById("filter-status")?.value;
+  const extra = {};
+  if (status && status !== "draft" && status !== "withdrawn") {
+    extra.status = status;
+  }
+  window._exportCsv(extra);
+});
 
 window.quickDecision = async (reqId, decision) => {
   try {
@@ -932,16 +993,30 @@ function renderRequestsTable() {
   tbody.innerHTML = list.length
     ? list
         .map(
-          (r) => `
+          (r) => {
+            let amtStr = `${Number(r.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })} ${escapeHtml(r.currency || "USD")}`;
+            if (r.currency && r.currency !== "USD" && r.amount_usd) {
+              amtStr += `<br/><span class="muted small">(~$${Number(r.amount_usd).toFixed(2)} USD)</span>`;
+            }
+            let statusBadge = `<span class="status-pill status-${r.status}">${r.status}</span>`;
+            if (r.is_draft) {
+              statusBadge = `<span class="status-pill" style="background:#6B7280;color:#fff;">Draft</span>`;
+            } else if (r.is_withdrawn) {
+              statusBadge = `<span class="status-pill" style="background:#EF4444;color:#fff;">Withdrawn</span>`;
+            } else if (r.auto_approved) {
+              statusBadge += ' <span class="small muted">(Auto)</span>';
+            }
+            return `
     <tr>
       <td>#${r.id}</td>
       <td><strong>${escapeHtml(r.title)}</strong><div class="muted small">${humanizeType(r.request_type)}</div></td>
       <td>${escapeHtml(r.requester_name)}</td>
-      <td>${Number(r.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })} ${escapeHtml(r.currency)}</td>
-      <td><span class="status-pill status-${r.status}">${r.status}</span>${r.auto_approved ? ' <span class="small muted">(Auto)</span>' : ""}</td>
+      <td>${amtStr}</td>
+      <td>${statusBadge}</td>
       <td>${r.ai_recommendation || "-"} (${Math.round((r.ai_risk_score || 0) * 100)}% risk)${r.is_anomaly ? ' <strong>[Anomaly]</strong>' : ""}</td>
       <td><button class="btn btn-sm btn-primary" onclick="openRequestDetail(${r.id})">View</button></td>
-    </tr>`
+    </tr>`;
+          }
         )
         .join("")
     : '<tr><td colspan="7" class="muted small" style="text-align:center;padding:26px;">No requests found matching current filter.</td></tr>';
@@ -1035,10 +1110,16 @@ window.openRequestDetail = async (id) => {
     !["approved", "rejected"].includes(r.status) &&
     data.tasks.some((t) => t.status === "pending" && (t.assigned_role === state.user.role || state.user.role === "admin"));
 
-  const formattedAmount = `${Number(r.amount).toLocaleString(undefined, {
+  const isRequester = state.user && r.requester_id === state.user.id;
+  const canWithdraw = isRequester && !r.is_draft && !r.is_withdrawn && r.status !== "approved" && r.status !== "rejected";
+
+  let formattedAmount = `${Number(r.amount).toLocaleString(undefined, {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  })} ${r.currency}`;
+  })} ${escapeHtml(r.currency || "USD")}`;
+  if (r.currency && r.currency !== "USD" && r.amount_usd) {
+    formattedAmount += ` (~$${Number(r.amount_usd).toFixed(2)} USD)`;
+  }
 
   const riskPct = Math.round((r.ai_risk_score || 0) * 100);
   const confPct = Math.round((r.ai_confidence || 0) * 100);
@@ -1049,6 +1130,24 @@ window.openRequestDetail = async (id) => {
       : rec === "reject"
       ? "ai-chip-rec-reject"
       : "ai-chip-rec-review";
+
+  let headerActions = "";
+  if (canWithdraw) {
+    headerActions += `<button class="btn btn-secondary btn-sm" style="color:var(--accent-red);border-color:var(--accent-red);" onclick="withdrawCurrentRequest(${r.id})">🛑 Withdraw Request</button>`;
+  }
+
+  document.getElementById("modal-title").innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;width:100%;padding-right:12px;">
+      <div>
+        <div class="modal-header-badges">
+          <span class="detail-badge-type">${humanType}</span>
+          <span class="status-pill status-${r.status}">${r.is_draft ? "Draft" : r.is_withdrawn ? "Withdrawn" : r.status}</span>
+        </div>
+        <h3 class="modal-title-text" style="margin-top:4px;">Request #${r.id} — ${escapeHtml(r.title)}</h3>
+      </div>
+      <div>${headerActions}</div>
+    </div>
+  `;
 
   document.getElementById("modal-body").innerHTML = `
     <!-- Structured Key-Value Metadata Grid -->
@@ -1061,7 +1160,7 @@ window.openRequestDetail = async (id) => {
       <div class="detail-grid-cell">
         <div class="detail-label">Total Amount</div>
         <div class="detail-value" style="color:var(--primary);">${formattedAmount}</div>
-        <div class="detail-subvalue">Currency: ${escapeHtml(r.currency)}</div>
+        <div class="detail-subvalue">Currency: ${escapeHtml(r.currency || "USD")}</div>
       </div>
       <div class="detail-grid-cell">
         <div class="detail-label">Category / Type</div>
@@ -1076,6 +1175,17 @@ window.openRequestDetail = async (id) => {
         <div class="detail-subvalue">${r.created_at ? formatDate(r.created_at) : "Standard SLA"}</div>
       </div>
     </div>
+
+    <!-- Rejection Classification Banner (if rejected) -->
+    ${
+      r.rejection_reason
+        ? `
+      <div class="card" style="margin-top:14px;background:rgba(239, 68, 68, 0.08);border:1px solid rgba(239, 68, 68, 0.25);border-radius:10px;padding:12px 14px;">
+        <strong style="color:var(--accent-red);">Rejection / Return Classification:</strong>
+        <span style="font-weight:600;margin-left:6px;">${escapeHtml(r.rejection_reason.replace(/_/g, ' '))}</span>
+      </div>`
+        : ""
+    }
 
     <!-- Purpose & Description Box -->
     <div class="detail-desc-box">
@@ -1108,6 +1218,18 @@ window.openRequestDetail = async (id) => {
       }
     </div>
 
+    <!-- Draft Action Box -->
+    ${
+      r.is_draft && isRequester
+        ? `
+      <div class="card" style="margin-top:20px;background:var(--bg-subtle);border:1px dashed var(--border);border-radius:10px;padding:16px;">
+        <h4 style="margin:0 0 6px 0;">Draft Status — Ready to Submit?</h4>
+        <p class="small muted" style="margin:0 0 12px 0;">This request is currently saved as a private draft. Submitting will run compliance evaluation and route it to reviewers.</p>
+        <button class="btn btn-special btn-sm" onclick="submitDraftRequest(${r.id})">🚀 Submit Draft for Review</button>
+      </div>`
+        : ""
+    }
+
     <!-- Workflow Stages & Approval Trail -->
     <div class="detail-section-header">
       <h4>Workflow Stages &amp; Approval Trail</h4>
@@ -1122,7 +1244,10 @@ window.openRequestDetail = async (id) => {
               <div class="workflow-step-num">${t.stage_index + 1}</div>
               <div class="workflow-step-content">
                 <div class="workflow-step-header">
-                  <div class="workflow-step-title">${escapeHtml(t.stage_name)} <span class="muted small">(${escapeHtml(t.assigned_role)})</span></div>
+                  <div class="workflow-step-title">
+                    ${escapeHtml(t.stage_name)} <span class="muted small">(${escapeHtml(t.assigned_role)})</span>
+                    ${t.is_escalated ? `<span class="badge" style="background:var(--accent-red);color:#fff;font-size:0.7rem;margin-left:6px;">⚠️ Escalated (SLA Breached)</span>` : ""}
+                  </div>
                   <span class="status-pill status-${t.status === "waiting" ? "pending" : t.status}">${t.status}</span>
                 </div>
                 ${
@@ -1140,7 +1265,7 @@ window.openRequestDetail = async (id) => {
         <div class="auto-approved-card">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
           <div>
-            <strong>Automated Instant Approval:</strong> Request amount ($${Number(r.amount).toFixed(2)}) meets company policy threshold rules with low risk rating (${riskPct}%). No manual escalation required.
+            <strong>Automated Instant Approval:</strong> Request amount (${formattedAmount}) meets company policy threshold rules with low risk rating (${riskPct}%). No manual escalation required.
           </div>
         </div>
       `
@@ -1182,7 +1307,7 @@ window.openRequestDetail = async (id) => {
         <textarea id="decision-comment" rows="2" placeholder="Provide audit reason or notes for this decision..."></textarea>
         <div class="form-actions" style="margin-top:12px;display:flex;gap:10px;">
           <button class="btn btn-success" style="flex:1;" onclick="submitDecision(${r.id}, 'approved')">✓ Approve Request</button>
-          <button class="btn btn-special" style="flex:1;" onclick="submitDecision(${r.id}, 'rejected')">✕ Reject Request</button>
+          <button class="btn btn-special" style="flex:1;background:var(--accent-red);border-color:var(--accent-red);" onclick="openRejectionModal(${r.id})">✕ Reject Request</button>
         </div>
       </div>`
         : ""
@@ -1195,12 +1320,12 @@ document.getElementById("modal-close-btn").addEventListener("click", () => {
   showEl(document.getElementById("detail-modal"), false);
 });
 
-window.submitDecision = async (reqId, decision) => {
+window.submitDecision = async (reqId, decision, rejectionReason = null) => {
   const comment = document.getElementById("decision-comment")?.value || "";
   try {
     await api(`/api/requests/${reqId}/decision`, {
       method: "POST",
-      body: JSON.stringify({ decision, comment }),
+      body: JSON.stringify({ decision, comment, rejection_reason: rejectionReason }),
     });
     showEl(document.getElementById("detail-modal"), false);
     loadRequests();
@@ -1208,6 +1333,69 @@ window.submitDecision = async (reqId, decision) => {
     loadNotifications();
   } catch (err) {
     alert(err.message);
+  }
+};
+
+window.openRejectionModal = (reqId) => {
+  document.getElementById("rej-request-id").value = reqId;
+  document.getElementById("rej-reason-select").value = "";
+  document.getElementById("rej-comment").value = "";
+  showEl(document.getElementById("rejection-modal"), true);
+};
+
+document.getElementById("rejection-modal-close-btn")?.addEventListener("click", () => {
+  showEl(document.getElementById("rejection-modal"), false);
+});
+document.getElementById("rejection-cancel-btn")?.addEventListener("click", () => {
+  showEl(document.getElementById("rejection-modal"), false);
+});
+
+document.getElementById("rejection-form")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const reqId = document.getElementById("rej-request-id").value;
+  const reason = document.getElementById("rej-reason-select").value;
+  const comment = document.getElementById("rej-comment").value;
+  if (!reason) return alert("Please select a standardized rejection reason.");
+  try {
+    await api(`/api/requests/${reqId}/decision`, {
+      method: "POST",
+      body: JSON.stringify({ decision: "rejected", rejection_reason: reason, comment }),
+    });
+    showEl(document.getElementById("rejection-modal"), false);
+    showEl(document.getElementById("detail-modal"), false);
+    loadRequests();
+    loadDashboard();
+    loadNotifications();
+    alert("Request returned/rejected with compliance classification.");
+  } catch (err) {
+    alert("Rejection failed: " + err.message);
+  }
+});
+
+window.withdrawCurrentRequest = async (reqId) => {
+  if (!confirm("Are you sure you want to withdraw and cancel this request?")) return;
+  try {
+    await api(`/api/requests/${reqId}/withdraw`, { method: "POST" });
+    showEl(document.getElementById("detail-modal"), false);
+    loadRequests();
+    loadDashboard();
+    loadNotifications();
+    alert("Request withdrawn successfully.");
+  } catch (err) {
+    alert("Failed to withdraw request: " + err.message);
+  }
+};
+
+window.submitDraftRequest = async (reqId) => {
+  try {
+    const res = await api(`/api/requests/${reqId}/submit-draft`, { method: "POST" });
+    showEl(document.getElementById("detail-modal"), false);
+    loadRequests();
+    loadDashboard();
+    loadNotifications();
+    alert(`Draft submitted successfully • Resulting Status: ${res.status}`);
+  } catch (err) {
+    alert("Failed to submit draft: " + err.message);
   }
 };
 
@@ -1228,20 +1416,54 @@ document.getElementById("request-form").addEventListener("submit", async (e) => 
   fd.append("request_type", document.getElementById("req-type").value);
   fd.append("title", document.getElementById("req-title").value);
   fd.append("amount", document.getElementById("req-amount").value);
+  fd.append("currency", document.getElementById("req-currency")?.value || "USD");
   fd.append("urgency", document.getElementById("req-urgency").value);
   fd.append("description", document.getElementById("req-description").value);
   const fileInput = document.getElementById("req-attachment");
   if (fileInput.files.length > 0) {
     fd.append("attachment", fileInput.files[0]);
   }
-  const res = await api("/api/requests", { method: "POST", body: fd });
-  const box = document.getElementById("submit-result-box");
-  box.innerHTML = `Created <strong>Request #${res.request_id}</strong> • Status: <strong>${res.status}</strong><br/>${res.ai_evaluation.explanation}`;
-  showEl(box, true);
-  e.target.reset();
-  loadRequests();
-  loadDashboard();
-  loadNotifications();
+  try {
+    const res = await api("/api/requests", { method: "POST", body: fd });
+    const box = document.getElementById("submit-result-box");
+    box.innerHTML = `Created <strong>Request #${res.request_id}</strong> • Status: <strong>${res.status}</strong><br/>${res.ai_evaluation ? res.ai_evaluation.explanation : ""}`;
+    showEl(box, true);
+    e.target.reset();
+    loadRequests();
+    loadDashboard();
+    loadNotifications();
+  } catch (err) {
+    alert("Submission failed: " + err.message);
+  }
+});
+
+document.getElementById("save-draft-btn")?.addEventListener("click", async () => {
+  const title = document.getElementById("req-title").value.trim();
+  if (!title) return alert("Please enter at least a title to save a draft.");
+  const fd = new FormData();
+  fd.append("request_type", document.getElementById("req-type").value);
+  fd.append("title", title);
+  fd.append("amount", document.getElementById("req-amount").value || "0");
+  fd.append("currency", document.getElementById("req-currency")?.value || "USD");
+  fd.append("urgency", document.getElementById("req-urgency").value);
+  fd.append("description", document.getElementById("req-description").value || "");
+  fd.append("is_draft", "true");
+  const fileInput = document.getElementById("req-attachment");
+  if (fileInput && fileInput.files.length > 0) {
+    fd.append("attachment", fileInput.files[0]);
+  }
+  try {
+    const res = await api("/api/requests", { method: "POST", body: fd });
+    const box = document.getElementById("submit-result-box");
+    box.innerHTML = `Saved <strong>Draft #${res.request_id}</strong>. You can view or submit it under <em>Requests &amp; Queue</em>.`;
+    showEl(box, true);
+    document.getElementById("request-form").reset();
+    loadRequests();
+    loadDashboard();
+    loadNotifications();
+  } catch (err) {
+    alert("Failed to save draft: " + err.message);
+  }
 });
 
 // Voice & Chat Assistant
@@ -1582,13 +1804,38 @@ async function loadAdminData() {
         .map((u) => {
           const initials = getInitials(u.full_name);
           const bg = roleAvatarGradients[u.role] || roleAvatarGradients.requester;
+          const isActive = u.is_active !== 0 && u.is_active !== false;
+          const statusBadge = isActive
+            ? `<span style="font-size:0.68rem;padding:2px 7px;border-radius:9999px;background:rgba(16,185,129,0.15);color:#059669;font-weight:700;">Active</span>`
+            : `<span style="font-size:0.68rem;padding:2px 7px;border-radius:9999px;background:rgba(239,68,68,0.15);color:#DC2626;font-weight:700;">Deactivated</span>`;
+
+          let adminControls = "";
+          if (state.user && state.user.role === "admin") {
+            const isSelf = u.id === state.user.id;
+            adminControls = `
+              <div style="display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap;">
+                ${!isSelf ? `
+                  <button class="btn btn-secondary btn-sm" style="font-size:0.72rem;padding:2px 8px;${isActive ? 'color:var(--accent-red);' : 'color:#059669;'}" onclick="toggleUserActive(${u.id}, ${!isActive})">
+                    ${isActive ? "Deactivate" : "Activate"}
+                  </button>
+                ` : ""}
+                <button class="btn btn-secondary btn-sm" style="font-size:0.72rem;padding:2px 8px;" onclick="openUserPwdModal(${u.id}, '${escapeHtml(u.username)}')">
+                  🔑 Reset Pwd
+                </button>
+              </div>
+            `;
+          }
+
           return `
-            <div class="user-profile-card">
+            <div class="user-profile-card" style="${!isActive ? 'opacity:0.75;' : ''}">
               <div class="user-avatar-circle" style="background:${bg};">${initials}</div>
               <div class="user-profile-info">
                 <div class="user-profile-top">
                   <span class="user-profile-name">${escapeHtml(u.full_name)}</span>
-                  <span class="user-role-badge role-badge-${u.role}">${escapeHtml(u.role)}</span>
+                  <div style="display:flex;align-items:center;gap:6px;">
+                    ${statusBadge}
+                    <span class="user-role-badge role-badge-${u.role}">${escapeHtml(u.role)}</span>
+                  </div>
                 </div>
                 <div class="user-profile-meta">
                   <span class="user-profile-handle">@${escapeHtml(u.username)}</span>
@@ -1596,6 +1843,7 @@ async function loadAdminData() {
                   <span class="user-profile-dept">${escapeHtml(u.department || "Organization")}</span>
                   ${u.email ? `<span class="meta-dot">&bull;</span><span class="user-profile-email">${escapeHtml(u.email)}</span>` : ""}
                 </div>
+                ${adminControls}
               </div>
             </div>`;
         })
@@ -1760,6 +2008,159 @@ window.toggleWorkflowActive = async (workflowId, makeActive) => {
     alert("Failed to update workflow: " + err.message);
   }
 };
+
+// Out of Office & Approval Delegation Handlers
+async function loadDelegationsData() {
+  try {
+    const [delRes, colRes] = await Promise.all([
+      api("/api/delegations"),
+      api("/api/delegations/colleagues"),
+    ]);
+
+    // Populate colleague selector
+    const colSelect = document.getElementById("del-colleague-select");
+    if (colSelect) {
+      colSelect.innerHTML = (colRes.colleagues || []).length
+        ? `<option value="">Select an active colleague...</option>` +
+          colRes.colleagues
+            .map(
+              (c) =>
+                `<option value="${c.id}">${escapeHtml(c.full_name)} (@${escapeHtml(c.username)}) — ${c.role.toUpperCase()} (${escapeHtml(c.department || "General")})</option>`
+            )
+            .join("")
+        : `<option value="">No eligible colleagues available</option>`;
+    }
+
+    // Populate active delegations list
+    const listEl = document.getElementById("active-delegations-list");
+    if (listEl) {
+      const activeList = (delRes.delegations || []).filter((d) => d.is_active);
+      listEl.innerHTML = activeList.length
+        ? activeList
+            .map((d) => {
+              const isMine = d.user_id === state.user.id;
+              const title = isMine
+                ? `You ➔ <strong>${escapeHtml(d.delegate_name)}</strong>`
+                : `<strong>${escapeHtml(d.delegator_name)}</strong> ➔ You (Acting Delegate)`;
+              return `
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--card-bg);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;gap:8px;flex-wrap:wrap;">
+                <div style="font-size:0.85rem;">
+                  <div>${title}</div>
+                  <div class="muted small">${escapeHtml(d.start_date)} to ${escapeHtml(d.end_date)}${d.notes ? ` • <em>${escapeHtml(d.notes)}</em>` : ""}</div>
+                </div>
+                ${
+                  isMine || state.user.role === "admin"
+                    ? `<button type="button" class="btn btn-secondary btn-sm" style="color:var(--accent-red);font-size:0.75rem;padding:2px 8px;" onclick="revokeDelegation(${d.id})">Revoke</button>`
+                    : '<span class="status-pill status-approved" style="font-size:0.7rem;">Active</span>'
+                }
+              </div>`;
+            })
+            .join("")
+        : '<p class="muted small" style="margin:0;">No active delegations configured.</p>';
+    }
+  } catch (err) {
+    console.warn("Failed to load delegations:", err);
+  }
+}
+
+window.revokeDelegation = async (id) => {
+  if (!confirm("Revoke this approval delegation coverage?")) return;
+  try {
+    await api(`/api/delegations/${id}`, { method: "DELETE" });
+    loadDelegationsData();
+    loadRequests();
+    alert("Delegation coverage revoked successfully.");
+  } catch (err) {
+    alert("Failed to revoke delegation: " + err.message);
+  }
+};
+
+document.getElementById("ooo-btn")?.addEventListener("click", () => {
+  const today = new Date().toISOString().slice(0, 10);
+  const startInput = document.getElementById("del-start-date");
+  if (startInput && !startInput.value) startInput.value = today;
+  showEl(document.getElementById("delegation-modal"), true);
+  loadDelegationsData();
+});
+
+document.getElementById("delegation-close-btn")?.addEventListener("click", () => {
+  showEl(document.getElementById("delegation-modal"), false);
+});
+
+document.getElementById("delegation-cancel-btn")?.addEventListener("click", () => {
+  showEl(document.getElementById("delegation-modal"), false);
+});
+
+document.getElementById("delegation-form")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const delegate_user_id = document.getElementById("del-colleague-select").value;
+  const start_date = document.getElementById("del-start-date").value;
+  const end_date = document.getElementById("del-end-date").value;
+  const notes = document.getElementById("del-notes").value;
+  if (!delegate_user_id) return alert("Please select an active colleague delegate.");
+  if (start_date > end_date) return alert("End date must be on or after start date.");
+
+  try {
+    await api("/api/delegations", {
+      method: "POST",
+      body: JSON.stringify({ delegate_user_id: parseInt(delegate_user_id, 10), start_date, end_date, notes }),
+    });
+    document.getElementById("del-notes").value = "";
+    loadDelegationsData();
+    loadRequests();
+    alert("Out-of-Office approval delegation activated successfully!");
+  } catch (err) {
+    alert("Failed to activate delegation: " + err.message);
+  }
+});
+
+// Admin User Lifecycle Management Handlers
+window.toggleUserActive = async (userId, makeActive) => {
+  const actionName = makeActive ? "activate" : "deactivate";
+  if (!confirm(`Are you sure you want to ${actionName} this user account?`)) return;
+  try {
+    await api(`/api/users/${userId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ is_active: makeActive }),
+    });
+    loadAdminData();
+    alert(`User account ${makeActive ? "activated" : "deactivated"} successfully.`);
+  } catch (err) {
+    alert("Failed to update user account: " + err.message);
+  }
+};
+
+window.openUserPwdModal = (userId, username) => {
+  document.getElementById("pwd-user-id").value = userId;
+  document.getElementById("pwd-modal-user-title").textContent = `Reset Password — @${username}`;
+  document.getElementById("admin-new-password").value = "";
+  showEl(document.getElementById("user-pwd-modal"), true);
+};
+
+document.getElementById("pwd-modal-close-btn")?.addEventListener("click", () => {
+  showEl(document.getElementById("user-pwd-modal"), false);
+});
+
+document.getElementById("pwd-cancel-btn")?.addEventListener("click", () => {
+  showEl(document.getElementById("user-pwd-modal"), false);
+});
+
+document.getElementById("user-pwd-form")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const userId = document.getElementById("pwd-user-id").value;
+  const password = document.getElementById("admin-new-password").value;
+  try {
+    await api(`/api/users/${userId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ password }),
+    });
+    showEl(document.getElementById("user-pwd-modal"), false);
+    document.getElementById("user-pwd-form").reset();
+    alert("User password successfully reset and logged to audit trail.");
+  } catch (err) {
+    alert("Password reset failed: " + err.message);
+  }
+});
 
 bootstrap();
 

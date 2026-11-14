@@ -193,3 +193,148 @@ def mark_notification_read(notif_id: int):
 def trigger_reminder_sweep():
     result = run_reminder_sweep(get_db())
     return jsonify(result)
+
+
+@workflows_bp.route("/notifications/read-all", methods=["POST"])
+@require_auth
+def mark_all_notifications_read():
+    db = get_db()
+    db.execute("UPDATE notifications SET is_read = 1 WHERE user_id = ?", (g.current_user["id"],))
+    db.commit()
+    return jsonify({"ok": True})
+
+
+@workflows_bp.route("/notifications/emails", methods=["GET"])
+@require_auth
+def list_email_dispatches():
+    """List simulated dispatched emails (filtered to user or all for admin)."""
+    db = get_db()
+    user = g.current_user
+    if user["role"] == "admin":
+        rows = db.execute("SELECT * FROM email_dispatches ORDER BY id DESC LIMIT 50").fetchall()
+    else:
+        rows = db.execute(
+            "SELECT * FROM email_dispatches WHERE recipient_email = ? ORDER BY id DESC LIMIT 50",
+            (user["email"],),
+        ).fetchall()
+    return jsonify({"emails": [dict(r) for r in rows]})
+
+
+@workflows_bp.route("/workflows/escalate", methods=["POST"])
+@require_roles("admin", "manager")
+def trigger_sla_escalation():
+    """Explicitly scan and escalate overdue approval requests."""
+    from .workflow_engine import run_sla_escalation
+    result = run_sla_escalation(get_db())
+    return jsonify(result)
+
+
+# --- Approval Delegation & Out of Office (OOO) Routes ---
+
+@workflows_bp.route("/delegations", methods=["GET"])
+@require_auth
+def list_delegations():
+    """List delegations for the current user (both as delegator and as delegate)."""
+    db = get_db()
+    user_id = g.current_user["id"]
+    rows = db.execute(
+        """
+        SELECT d.*,
+               u_from.full_name AS delegator_name, u_from.username AS delegator_username, u_from.role AS delegator_role,
+               u_to.full_name AS delegate_name, u_to.username AS delegate_username, u_to.role AS delegate_role
+        FROM delegations d
+        JOIN users u_from ON u_from.id = d.user_id
+        JOIN users u_to ON u_to.id = d.delegate_user_id
+        WHERE d.user_id = ? OR d.delegate_user_id = ?
+        ORDER BY d.id DESC
+        """,
+        (user_id, user_id),
+    ).fetchall()
+    return jsonify({"delegations": [dict(r) for r in rows]})
+
+
+@workflows_bp.route("/delegations", methods=["POST"])
+@require_roles("manager", "approver", "hr", "admin")
+def create_delegation():
+    """Set up an Out-of-Office approval delegation."""
+    data = request.get_json(silent=True) or {}
+    delegate_user_id = data.get("delegate_user_id")
+    start_date = (data.get("start_date") or "").strip()
+    end_date = (data.get("end_date") or "").strip()
+    notes = (data.get("notes") or "").strip()
+
+    if not delegate_user_id or not start_date or not end_date:
+        return jsonify({"error": "delegate_user_id, start_date, and end_date are required"}), 400
+
+    if int(delegate_user_id) == g.current_user["id"]:
+        return jsonify({"error": "Cannot delegate approval authority to yourself"}), 400
+
+    db = get_db()
+    delegate_user = db.execute("SELECT id, full_name, role FROM users WHERE id = ? AND is_active = 1", (delegate_user_id,)).fetchone()
+    if not delegate_user:
+        return jsonify({"error": "Selected delegate user does not exist or is inactive"}), 404
+
+    now = utcnow_iso()
+    cur = db.execute(
+        """
+        INSERT INTO delegations (user_id, delegate_user_id, start_date, end_date, notes, is_active, created_at)
+        VALUES (?, ?, ?, ?, ?, 1, ?)
+        """,
+        (g.current_user["id"], delegate_user_id, start_date, end_date, notes, now),
+    )
+    delegation_id = cur.lastrowid
+    append_audit_log(
+        db,
+        g.current_user["id"],
+        g.current_user["username"],
+        "DELEGATION_CREATED",
+        "delegation",
+        delegation_id,
+        {
+            "delegate_user_id": delegate_user_id,
+            "delegate_name": delegate_user["full_name"],
+            "start_date": start_date,
+            "end_date": end_date,
+            "notes": notes,
+        },
+        now,
+    )
+    db.commit()
+    return jsonify({"id": delegation_id, "message": "Approval delegation saved successfully"}), 201
+
+
+@workflows_bp.route("/delegations/<int:delegation_id>", methods=["DELETE"])
+@require_auth
+def revoke_delegation(delegation_id: int):
+    """Revoke or deactivate an active delegation."""
+    db = get_db()
+    del_row = db.execute("SELECT * FROM delegations WHERE id = ?", (delegation_id,)).fetchone()
+    if not del_row:
+        return jsonify({"error": "Delegation not found"}), 404
+    if del_row["user_id"] != g.current_user["id"] and g.current_user["role"] != "admin":
+        return jsonify({"error": "Access denied"}), 403
+
+    db.execute("UPDATE delegations SET is_active = 0 WHERE id = ?", (delegation_id,))
+    append_audit_log(
+        db,
+        g.current_user["id"],
+        g.current_user["username"],
+        "DELEGATION_REVOKED",
+        "delegation",
+        delegation_id,
+        {},
+    )
+    db.commit()
+    return jsonify({"message": "Delegation revoked successfully"})
+
+
+@workflows_bp.route("/delegations/colleagues", methods=["GET"])
+@require_auth
+def list_potential_delegates():
+    """List colleagues who can act as approval delegates."""
+    db = get_db()
+    rows = db.execute(
+        "SELECT id, username, full_name, role, department FROM users WHERE id != ? AND is_active = 1 ORDER BY full_name ASC",
+        (g.current_user["id"],),
+    ).fetchall()
+    return jsonify({"colleagues": [dict(r) for r in rows]})

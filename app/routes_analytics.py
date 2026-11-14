@@ -3,7 +3,7 @@
 import csv
 import hashlib
 import io
-from flask import Blueprint, Response, g, jsonify
+from flask import Blueprint, Response, g, jsonify, request
 
 from .ai_engine import ai_engine, analyze_workflows_and_rules, predict_bottlenecks_and_forecast
 from .db import get_db
@@ -99,28 +99,62 @@ def optimizations():
 @analytics_bp.route("/analytics/export.csv", methods=["GET"])
 @require_roles("manager", "approver", "hr", "admin")
 def export_csv():
+    """Export filtered accounting and reconciliation records in CSV format."""
     db = get_db()
-    rows = db.execute(
-        """
-        SELECT r.id, u.username AS requester, r.request_type, r.title, r.amount, r.currency,
-               r.status, r.ai_recommendation, r.ai_risk_score, r.is_anomaly, r.auto_approved, r.created_at
+    status_filter = request.args.get("status")
+    department_filter = request.args.get("department")
+    type_filter = request.args.get("request_type")
+    start_date = request.args.get("start_date")
+    end_date = request.args.get("end_date")
+
+    query = """
+        SELECT r.id, u.username AS requester_username, u.full_name AS requester_name,
+               r.department, r.request_type, r.title, r.amount, r.currency,
+               COALESCE(r.amount_usd, r.amount) AS amount_usd,
+               r.status, COALESCE(r.rejection_reason, '') AS rejection_reason,
+               r.urgency, r.ai_recommendation, r.ai_risk_score, r.is_anomaly,
+               r.auto_approved, r.created_at, COALESCE(r.completed_at, '') AS completed_at
         FROM requests r
         JOIN users u ON u.id = r.requester_id
-        ORDER BY r.id DESC
-        """
-    ).fetchall()
+        WHERE (r.is_draft = 0 OR r.is_draft IS NULL)
+    """
+    params = []
+
+    if status_filter:
+        query += " AND r.status = ?"
+        params.append(status_filter)
+    if department_filter:
+        query += " AND r.department = ?"
+        params.append(department_filter)
+    if type_filter:
+        query += " AND r.request_type = ?"
+        params.append(type_filter)
+    if start_date:
+        query += " AND date(r.created_at) >= date(?)"
+        params.append(start_date)
+    if end_date:
+        query += " AND date(r.created_at) <= date(?)"
+        params.append(end_date)
+
+    query += " ORDER BY r.id DESC"
+    rows = db.execute(query, params).fetchall()
+
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow([
-        "id", "requester", "request_type", "title", "amount", "currency",
-        "status", "ai_recommendation", "ai_risk_score", "is_anomaly", "auto_approved", "created_at",
+        "Request ID", "Requester Username", "Requester Name", "Department",
+        "Category", "Title", "Amount", "Currency", "Amount (USD)",
+        "Status", "Rejection / Cancellation Reason", "Urgency",
+        "AI Recommendation", "AI Risk Score", "Anomaly Flag",
+        "Auto-Approved", "Created At", "Completed At",
     ])
     for r in rows:
         writer.writerow(list(r))
+
     return Response(
         buf.getvalue(),
         mimetype="text/csv",
-        headers={"Content-Disposition": "attachment; filename=approval_report.csv"},
+        headers={"Content-Disposition": "attachment; filename=approval_accounting_report.csv"},
     )
 
 

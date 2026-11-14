@@ -72,7 +72,11 @@ def login():
         db.commit()
         return jsonify({"error": "Administrator sign-in is disabled on this gateway. Use the dedicated /login/admin portal."}), 403
 
-    if not user or not user["is_active"] or not verify_password(password, user["password_hash"]):
+    if user and not user["is_active"]:
+        login_rate_limiter.record_failure(rate_key)
+        return jsonify({"error": "This account is deactivated. Please contact your administrator."}), 403
+
+    if not user or not verify_password(password, user["password_hash"]):
         login_rate_limiter.record_failure(rate_key)
         return jsonify({"error": "Invalid credentials"}), 401
 
@@ -109,7 +113,11 @@ def admin_login():
         "SELECT * FROM users WHERE lower(username) = lower(?) OR lower(email) = lower(?)",
         (identifier, identifier),
     ).fetchone()
-    if not user or not user["is_active"] or not verify_password(password, user["password_hash"]):
+    if user and not user["is_active"]:
+        login_rate_limiter.record_failure(rate_key)
+        return jsonify({"error": "This administrator account is deactivated."}), 403
+
+    if not user or not verify_password(password, user["password_hash"]):
         login_rate_limiter.record_failure(rate_key)
         append_audit_log(
             db, None, identifier or "unknown", "ADMIN_LOGIN_FAILED", "auth", None,
@@ -254,6 +262,22 @@ def update_user(user_id: int):
     email = data.get("email", target["email"])
     department = data.get("department", target["department"])
     is_active = 1 if data.get("is_active", target["is_active"]) else 0
+
+    # Optional password reset (admin only)
+    new_password = (data.get("password") or "").strip()
+    if new_password:
+        if g.current_user["role"] != "admin":
+            return jsonify({"error": "Only administrators can reset passwords"}), 403
+        pwd_err = validate_password_strength(new_password)
+        if pwd_err:
+            return jsonify({"error": pwd_err}), 400
+        db.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?",
+            (hash_password(new_password), user_id),
+        )
+        append_audit_log(
+            db, g.current_user["id"], g.current_user["username"], "USER_PASSWORD_RESET", "user", user_id, {}
+        )
 
     db.execute(
         "UPDATE users SET full_name = ?, email = ?, role = ?, department = ?, is_active = ? WHERE id = ?",

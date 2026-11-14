@@ -73,6 +73,10 @@ CREATE TABLE IF NOT EXISTS requests (
     nlp_extracted_json TEXT DEFAULT '{}',
     auto_approved INTEGER NOT NULL DEFAULT 0,
     due_at TEXT,
+    amount_usd REAL DEFAULT 0,
+    is_draft INTEGER NOT NULL DEFAULT 0,
+    is_withdrawn INTEGER NOT NULL DEFAULT 0,
+    rejection_reason TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     completed_at TEXT
@@ -99,6 +103,7 @@ CREATE TABLE IF NOT EXISTS approval_tasks (
     assigned_role TEXT NOT NULL,
     assigned_user_id INTEGER REFERENCES users(id),
     status TEXT NOT NULL CHECK(status IN ('waiting', 'pending', 'approved', 'rejected', 'skipped')),
+    is_escalated INTEGER NOT NULL DEFAULT 0,
     decision_by INTEGER REFERENCES users(id),
     comment TEXT,
     due_at TEXT,
@@ -112,6 +117,7 @@ CREATE TABLE IF NOT EXISTS approvals (
     task_id INTEGER REFERENCES approval_tasks(id),
     approver_id INTEGER NOT NULL REFERENCES users(id),
     decision TEXT NOT NULL CHECK(decision IN ('approved', 'rejected', 'auto_approved')),
+    rejection_reason TEXT,
     comment TEXT,
     cycle_time_hours REAL DEFAULT 0,
     created_at TEXT NOT NULL
@@ -125,6 +131,28 @@ CREATE TABLE IF NOT EXISTS notifications (
     title TEXT NOT NULL,
     message TEXT NOT NULL,
     is_read INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS delegations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    delegate_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    start_date TEXT NOT NULL,
+    end_date TEXT NOT NULL,
+    notes TEXT,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS email_dispatches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    recipient_email TEXT NOT NULL,
+    recipient_name TEXT,
+    subject TEXT NOT NULL,
+    body TEXT NOT NULL,
+    category TEXT NOT NULL,
+    request_id INTEGER REFERENCES requests(id) ON DELETE SET NULL,
     created_at TEXT NOT NULL
 );
 
@@ -153,6 +181,8 @@ CREATE INDEX IF NOT EXISTS idx_requests_created ON requests(created_at);
 CREATE INDEX IF NOT EXISTS idx_tasks_request ON approval_tasks(request_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_status_role ON approval_tasks(status, assigned_role);
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read);
+CREATE INDEX IF NOT EXISTS idx_delegations_active ON delegations(delegate_user_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_email_dispatches ON email_dispatches(recipient_email, created_at);
 """
 
 
@@ -214,6 +244,25 @@ def init_db(seed: bool = True):
     cols = {r["name"] for r in db.execute("PRAGMA table_info(request_attachments)").fetchall()}
     if "storage_backend" not in cols:
         db.execute("ALTER TABLE request_attachments ADD COLUMN storage_backend TEXT NOT NULL DEFAULT 'local'")
+
+    req_cols = {r["name"] for r in db.execute("PRAGMA table_info(requests)").fetchall()}
+    if "amount_usd" not in req_cols:
+        db.execute("ALTER TABLE requests ADD COLUMN amount_usd REAL DEFAULT 0")
+    if "is_draft" not in req_cols:
+        db.execute("ALTER TABLE requests ADD COLUMN is_draft INTEGER NOT NULL DEFAULT 0")
+    if "is_withdrawn" not in req_cols:
+        db.execute("ALTER TABLE requests ADD COLUMN is_withdrawn INTEGER NOT NULL DEFAULT 0")
+    if "rejection_reason" not in req_cols:
+        db.execute("ALTER TABLE requests ADD COLUMN rejection_reason TEXT")
+
+    appr_cols = {r["name"] for r in db.execute("PRAGMA table_info(approvals)").fetchall()}
+    if "rejection_reason" not in appr_cols:
+        db.execute("ALTER TABLE approvals ADD COLUMN rejection_reason TEXT")
+
+    task_cols = {r["name"] for r in db.execute("PRAGMA table_info(approval_tasks)").fetchall()}
+    if "is_escalated" not in task_cols:
+        db.execute("ALTER TABLE approval_tasks ADD COLUMN is_escalated INTEGER NOT NULL DEFAULT 0")
+
     if seed:
         existing_users = db.execute("SELECT COUNT(*) AS c FROM users").fetchone()["c"]
         if existing_users == 0:

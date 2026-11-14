@@ -14,7 +14,13 @@ from .chat_llm import (
 from .db import append_audit_log, get_db, utcnow_iso
 from .security import require_auth, require_roles
 from .storage import fetch_attachment_bytes, get_storage_config, save_attachment_bytes
-from .workflow_engine import process_approval_decision, submit_and_route_request
+from .workflow_engine import (
+    REJECTION_REASONS,
+    process_approval_decision,
+    submit_and_route_request,
+    submit_draft,
+    withdraw_request,
+)
 
 requests_bp = Blueprint("requests", __name__, url_prefix="/api")
 
@@ -29,6 +35,9 @@ def _serialize_request(row) -> dict:
     d["nlp_extracted"] = json.loads(d.pop("nlp_extracted_json", "{}") or "{}")
     d["is_anomaly"] = bool(d.get("is_anomaly"))
     d["auto_approved"] = bool(d.get("auto_approved"))
+    d["is_draft"] = bool(d.get("is_draft"))
+    d["is_withdrawn"] = bool(d.get("is_withdrawn"))
+    d["amount_usd"] = float(d.get("amount_usd") or 0.0)
     return d
 
 
@@ -41,6 +50,22 @@ def list_requests():
     status_filter = request.args.get("status")
     scope = request.args.get("scope")  # 'mine' | 'queue' | 'all'
 
+    # Check active delegations to user
+    today = utcnow_iso()[:10]
+    delegated_roles = [
+        r["role"]
+        for r in db.execute(
+            """
+            SELECT DISTINCT u.role FROM delegations d
+            JOIN users u ON u.id = d.user_id
+            WHERE d.delegate_user_id = ? AND d.is_active = 1
+              AND date(d.start_date) <= date(?) AND date(d.end_date) >= date(?)
+            """,
+            (user["id"], today, today),
+        ).fetchall()
+    ]
+    all_queue_roles = list(set([role] + delegated_roles))
+
     query = """
         SELECT r.*, u.username AS requester_username, u.full_name AS requester_name
         FROM requests r
@@ -49,32 +74,46 @@ def list_requests():
     """
     params = []
 
-    if scope == "mine" or role == "requester":
-        query += " AND r.requester_id = ?"
+    if status_filter == "draft":
+        query += " AND r.is_draft = 1 AND r.requester_id = ?"
         params.append(user["id"])
-    elif scope == "queue":
-        query += """
-            AND EXISTS (
-                SELECT 1 FROM approval_tasks t
-                WHERE t.request_id = r.id AND t.status = 'pending' AND t.assigned_role = ?
-            )
-        """
-        params.append(role)
-    elif role == "hr":
-        query += " AND (r.request_type = 'leave_request' OR r.requester_id = ?)"
+    else:
+        # Hide unsubmitted drafts from other users
+        query += " AND (r.is_draft = 0 OR r.requester_id = ?)"
         params.append(user["id"])
-    elif role in ("manager", "approver"):
-        query += """
-            AND (
-                r.requester_id = ?
-                OR EXISTS (SELECT 1 FROM approval_tasks t WHERE t.request_id = r.id AND t.assigned_role = ?)
-            )
-        """
-        params.extend([user["id"], role])
 
-    if status_filter:
-        query += " AND r.status = ?"
-        params.append(status_filter)
+        if scope == "mine" or role == "requester":
+            query += " AND r.requester_id = ?"
+            params.append(user["id"])
+        elif scope == "queue":
+            placeholders = ",".join("?" for _ in all_queue_roles)
+            query += f"""
+                AND EXISTS (
+                    SELECT 1 FROM approval_tasks t
+                    WHERE t.request_id = r.id AND t.status = 'pending' AND t.assigned_role IN ({placeholders})
+                )
+            """
+            params.extend(all_queue_roles)
+        elif role == "hr":
+            query += " AND (r.request_type = 'leave_request' OR r.requester_id = ?)"
+            params.append(user["id"])
+        elif role in ("manager", "approver"):
+            placeholders = ",".join("?" for _ in all_queue_roles)
+            query += f"""
+                AND (
+                    r.requester_id = ?
+                    OR EXISTS (SELECT 1 FROM approval_tasks t WHERE t.request_id = r.id AND t.assigned_role IN ({placeholders}))
+                )
+            """
+            params.append(user["id"])
+            params.extend(all_queue_roles)
+
+        if status_filter:
+            if status_filter == "withdrawn":
+                query += " AND r.is_withdrawn = 1"
+            else:
+                query += " AND r.status = ?"
+                params.append(status_filter)
 
     query += " ORDER BY r.id DESC LIMIT 200"
     rows = db.execute(query, params).fetchall()
@@ -158,6 +197,7 @@ def create_request():
             "currency": request.form.get("currency", "USD"),
             "department": request.form.get("department", user["department"]),
             "urgency": request.form.get("urgency", "normal"),
+            "is_draft": request.form.get("is_draft") in ("1", "true", "True"),
         }
         uploaded_file = request.files.get("attachment")
     else:
@@ -166,8 +206,14 @@ def create_request():
 
     title = (payload.get("title") or "").strip()
     description = (payload.get("description") or "").strip()
-    if not title or not description:
+    is_draft = payload.get("is_draft") in (1, "1", True, "true", "True")
+    if not title:
+        return jsonify({"error": "title is required"}), 400
+    if not is_draft and not description:
         return jsonify({"error": "title and description are required"}), 400
+    if is_draft and not description:
+        description = "(Draft in progress)"
+        payload["description"] = description
 
     # Fill missing fields via NLP extraction if omitted
     nlp_meta = extract_nlp_metadata(description)
@@ -273,14 +319,76 @@ def save_storage_config():
     })
 
 
+@requests_bp.route("/requests/<int:request_id>/submit-draft", methods=["POST"])
+@require_auth
+def submit_draft_route(request_id: int):
+    res, code = submit_draft(get_db(), g.current_user, request_id)
+    return jsonify(res), code
+
+
+@requests_bp.route("/requests/<int:request_id>/withdraw", methods=["POST"])
+@require_auth
+def withdraw_request_route(request_id: int):
+    res, code = withdraw_request(get_db(), g.current_user, request_id)
+    return jsonify(res), code
+
+
+@requests_bp.route("/requests/<int:request_id>", methods=["PUT"])
+@require_auth
+def edit_draft_request(request_id: int):
+    db = get_db()
+    req_row = db.execute("SELECT * FROM requests WHERE id = ?", (request_id,)).fetchone()
+    if not req_row:
+        return jsonify({"error": "Request not found"}), 404
+    req = dict(req_row)
+    if not req.get("is_draft"):
+        return jsonify({"error": "Only drafts can be edited directly"}), 400
+    if req["requester_id"] != g.current_user["id"] and g.current_user["role"] != "admin":
+        return jsonify({"error": "Access denied"}), 403
+
+    data = request.get_json(silent=True) or {}
+    title = data.get("title", req["title"]).strip()
+    description = data.get("description", req["description"]).strip()
+    amount = float(data.get("amount", req["amount"]) or 0.0)
+    currency = (data.get("currency", req["currency"]) or "USD").upper()
+    department = data.get("department", req["department"]).strip()
+    urgency = data.get("urgency", req["urgency"]).strip()
+    request_type = data.get("request_type", req["request_type"]).strip()
+    now = utcnow_iso()
+
+    from .currency import to_usd
+    amount_usd = to_usd(amount, currency)
+
+    db.execute(
+        """
+        UPDATE requests
+        SET title = ?, description = ?, amount = ?, currency = ?, department = ?,
+            urgency = ?, request_type = ?, amount_usd = ?, updated_at = ?
+        WHERE id = ?
+        """,
+        (title, description, amount, currency, department, urgency, request_type, amount_usd, now, request_id),
+    )
+    db.commit()
+    return jsonify({"message": "Draft updated successfully", "request_id": request_id}), 200
+
+
 @requests_bp.route("/requests/<int:request_id>/decision", methods=["POST"])
 @require_roles("manager", "approver", "hr", "admin")
 def decide_request(request_id: int):
     data = request.get_json(silent=True) or {}
     decision = (data.get("decision") or "").strip().lower()
     comment = (data.get("comment") or "").strip()
-    res, code = process_approval_decision(get_db(), g.current_user, request_id, decision, comment)
+    rejection_reason = (data.get("rejection_reason") or "").strip() or None
+    res, code = process_approval_decision(
+        get_db(), g.current_user, request_id, decision, comment, rejection_reason=rejection_reason
+    )
     return jsonify(res), code
+
+
+@requests_bp.route("/rejection-reasons", methods=["GET"])
+@require_auth
+def get_rejection_reasons():
+    return jsonify({"rejection_reasons": REJECTION_REASONS})
 
 
 @requests_bp.route("/nlp/analyze", methods=["POST"])
